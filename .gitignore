@@ -1,0 +1,9 @@
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Configuración local de herramientas
+.claude/
+
+# Logs y temporales
+*.log

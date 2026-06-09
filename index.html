@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0540A6">
+  <title>Polla Mundialista 2026</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- PANTALLA DE LOGIN (se muestra antes de entrar) -->
+  <div id="pantalla-login" class="pantalla-login"></div>
+
+  <!-- APLICACIÓN (oculta hasta iniciar sesión) -->
+  <div id="app" style="display:none">
+    <header class="encabezado">
+      <div class="franja-tricolor"></div>
+      <div class="encabezado-fila">
+        <div class="logo"><span class="trofeo">🏆</span><span id="nombre-polla">Polla Mundialista 2026</span></div>
+        <div class="controles-usuario">
+          <span id="badge-conexion" class="badge-conexion">💾 Local</span>
+          <span id="usuario-chip" class="usuario-chip"></span>
+          <button class="btn-salir" data-accion="salir" title="Cerrar sesión">Salir</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="cinta-mundial"><div id="cinta-banderas" class="cinta-banderas"></div></div>
+
+    <nav class="nav"><div class="nav-inner" id="nav-inner"></div></nav>
+
+    <main id="contenido"></main>
+  </div>
+
+  <!-- Librería de Supabase (solo se usa en modo en línea) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Scripts de la app: el orden importa -->
+  <script src="config.js"></script>
+  <script src="datos.js"></script>
+  <script src="db.js"></script>
+  <script src="auth.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
