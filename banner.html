@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  .banner { width: 1200px; height: 630px; background: radial-gradient(circle at 50% 0%, #0a4fc7 0%, #022e73 70%); color: #fff; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .tricolor { height: 12px; background: linear-gradient(90deg, #FFD100 0 33.34%, #0540A6 33.34% 66.67%, #E4002B 66.67% 100%); }
+  .glow { position: absolute; width: 600px; height: 600px; border-radius: 50%; background: radial-gradient(circle, rgba(255,209,0,.18), transparent 70%); top: -200px; right: -120px; }
+  .contenido { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px 40px; position: relative; z-index: 2; }
+  .trofeo { font-size: 84px; line-height: 1; filter: drop-shadow(0 6px 14px rgba(0,0,0,.35)); }
+  h1 { font-size: 62px; font-weight: 900; letter-spacing: -.02em; margin-top: 6px; text-shadow: 0 3px 12px rgba(0,0,0,.3); }
+  h1 .ec { color: #FFD100; }
+  .sede { font-size: 19px; font-weight: 600; opacity: .85; margin-top: 6px; letter-spacing: .01em; }
+  .lema { font-size: 24px; font-weight: 700; margin-top: 14px; color: #FFE680; }
+  .tarjeta-join { margin-top: 22px; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.25); border-radius: 18px; padding: 16px 30px; display: flex; gap: 34px; align-items: center; backdrop-filter: blur(4px); }
+  .tarjeta-join .item .et { font-size: 14px; opacity: .8; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .tarjeta-join .item .va { font-size: 26px; font-weight: 900; }
+  .tarjeta-join .item .va.cod { color: #FFD100; letter-spacing: .08em; }
+  .sep { width: 2px; height: 46px; background: rgba(255,255,255,.25); }
+  .banderas { font-size: 30px; letter-spacing: 8px; margin-top: 22px; }
+</style>
+</head>
+<body>
+  <div class="banner">
+    <div class="tricolor"></div>
+    <div class="glow"></div>
+    <div class="contenido">
+      <div class="trofeo">🏆</div>
+      <h1>POLLA MUNDIALISTA <span class="ec">2026</span></h1>
+      <div class="sede">Mundial 🇺🇸 🇲🇽 🇨🇦 · ¡juega con tus amigos! 🇪🇨</div>
+      <div class="lema">Predice los marcadores · gana puntos · llévate el bote</div>
+      <div class="tarjeta-join">
+        <div class="item"><div class="et">👉 Entra en</div><div class="va">polla-mundialistaecu.netlify.app</div></div>
+        <div class="sep"></div>
+        <div class="item"><div class="et">🔑 Código</div><div class="va cod">ECUADOR26</div></div>
+      </div>
+      <div class="banderas">🇪🇨 🇦🇷 🇧🇷 🇲🇽 🇨🇴 🇫🇷 🇪🇸 🇩🇪 🇵🇹 🇺🇾</div>
+    </div>
+    <div class="tricolor"></div>
+  </div>
+</body>
+</html>
