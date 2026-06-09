@@ -1,0 +1,5 @@
+# Configuración de Netlify — Polla Mundialista
+# Es un sitio estático (HTML/CSS/JS), no necesita compilación:
+# Netlify solo publica la carpeta raíz tal cual.
+[build]
+  publish = "."
