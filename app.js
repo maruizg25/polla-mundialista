@@ -16,6 +16,7 @@ let estado = {
   jugadores: [],
   partidos: [],
   predicciones: {},
+  apuestas: {},   // apuestas por partido: apuestas[jugadorId][partidoId] = { pago }
   resultadoFinal: { campeon: null, subcampeon: null },
   usuarioActual: null,
   vista: 'inicio',
@@ -104,9 +105,45 @@ function tablaPosiciones() {
     .sort((a, b) => b.puntos - a.puntos || b.exactos - a.exactos || a.jugador.nombre.localeCompare(b.jugador.nombre));
 }
 function posicionDe(jugadorId) { return tablaPosiciones().findIndex(x => x.jugador.id === jugadorId) + 1; }
-function jugadoresQuePagaron() { return estado.jugadores.filter(j => j.pago).length; }
-function boteRecaudado() { return jugadoresQuePagaron() * estado.config.montoApuesta; }
+/* --- Bote general (con abonos por partes) --- */
+function pagoCompleto(j) { return (j.abonado || 0) >= estado.config.montoApuesta; }
+function saldoJugador(j) { return Math.max(0, estado.config.montoApuesta - (j.abonado || 0)); }
+function jugadoresQuePagaron() { return estado.jugadores.filter(pagoCompleto).length; }
+function boteRecaudado() { return estado.jugadores.reduce((s, j) => s + Math.min(j.abonado || 0, estado.config.montoApuesta), 0); }
 function botePotencial()  { return estado.jugadores.length * estado.config.montoApuesta; }
+
+/* --- Motor de APUESTAS POR PARTIDO (opt-in + jackpot acumulado) ---
+   Cada quien elige en qué partidos entra y paga su monto. Gana quien acierte
+   el marcador exacto; si nadie acierta, el pozo se acumula al siguiente. */
+function calcularApuestas() {
+  const stake = estado.config.montoPartido || 0;
+  const ordenados = estado.partidos.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+  const porPartido = {};
+  let acumulado = 0;        // jackpot que se arrastra
+  let jackpotAsignado = false;
+  let jackpotActual = 0;    // acumulado disponible para el próximo partido sin jugar
+  ordenados.forEach(p => {
+    const ap = estado.apuestas;
+    const participantes = estado.jugadores.filter(j => ap[j.id] && ap[j.id][p.id]);
+    const pagados = participantes.filter(j => ap[j.id][p.id].pago);
+    let entrante = 0;
+    if (p.jugado) entrante = acumulado;
+    else if (!jackpotAsignado) { entrante = acumulado; jackpotActual = acumulado; jackpotAsignado = true; }
+    const pot = stake * pagados.length + entrante;
+    let ganadores = [], est = 'abierto';
+    if (p.jugado) {
+      ganadores = pagados.filter(j => {
+        const x = estado.predicciones[j.id] && estado.predicciones[j.id].partidos[p.id];
+        return x && x.local === p.golesLocal && x.visita === p.golesVisita;
+      });
+      if (ganadores.length > 0) { est = 'ganado'; acumulado = 0; }
+      else { est = 'vacante'; acumulado = pot; }
+    }
+    porPartido[p.id] = { participantes, pagados, pot, entrante, ganadores, estado: est, premio: ganadores.length ? pot / ganadores.length : 0 };
+  });
+  return { porPartido, jackpot: jackpotActual };
+}
+function entradoEnApuesta(jugadorId, partidoId) { return !!(estado.apuestas[jugadorId] && estado.apuestas[jugadorId][partidoId]); }
 
 /* ----------------------------------------------------------------
    VISTAS
@@ -148,16 +185,18 @@ function tarjetaResumenPartido(p, jugadorId) {
 function vistaPartidos() {
   const yo = usuario();
   const pr = estado.predicciones[yo.id] || { partidos: {} };
+  const ap = calcularApuestas();
   const grupos = {};
   estado.partidos.forEach(p => { (grupos[p.grupo] = grupos[p.grupo] || []).push(p); });
-  let html = `<div class="titulo-vista">Partidos y predicciones</div><div class="subtitulo-vista">Escribe tu marcador para cada partido. Puedes cambiarlo hasta que empiece el juego.</div>`;
+  let html = `<div class="titulo-vista">Partidos y apuestas</div><div class="subtitulo-vista">Pon tu marcador y, si quieres, entra a la apuesta del partido (${formatMoneda(estado.config.montoPartido)} c/u). Puedes cambiar hasta que empiece el juego.</div>`;
+  if (ap.jackpot > 0) html += `<div class="jackpot-banner">🔥 Pozo acumulado: <strong>${formatMoneda(ap.jackpot)}</strong> — se lo lleva el próximo que acierte el marcador exacto.</div>`;
   Object.keys(grupos).sort().forEach(g => {
     html += `<div class="grupo-titulo">📋 Grupo ${g}</div>`;
-    grupos[g].sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach(p => { html += filaPartido(p, pr); });
+    grupos[g].sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach(p => { html += filaPartido(p, pr, ap.porPartido[p.id]); });
   });
   return html;
 }
-function filaPartido(p, pr) {
+function filaPartido(p, pr, info) {
   const pred = pr.partidos[p.id] || { local: null, visita: null };
   const bloqueado = partidoBloqueado(p);
   const pts = puntosDePartido(pred, p);
@@ -186,7 +225,41 @@ function filaPartido(p, pr) {
         <div class="equipo local"><span class="bandera">${getEquipo(p.local).bandera}</span><span>${nombreEquipo(p.local)}</span></div>
         ${centro}
         <div class="equipo visita"><span>${nombreEquipo(p.visita)}</span><span class="bandera">${getEquipo(p.visita).bandera}</span></div>
-      </div>${pie}</div>`;
+      </div>${pie}${stripApuesta(p, info, bloqueado)}</div>`;
+}
+
+// Franja de "apuesta por partido" debajo de cada partido.
+function stripApuesta(p, info, bloqueado) {
+  info = info || { participantes: [], pagados: [], pot: 0, entrante: 0, ganadores: [], estado: 'abierto', premio: 0 };
+  const yo = usuario();
+  const stake = estado.config.montoPartido || 0;
+  const org = esOrganizador();
+  const miEntrada = estado.apuestas[yo.id] && estado.apuestas[yo.id][p.id];
+
+  const infoPozo = `<span class="ap-pozo">💸 Pozo ${formatMoneda(info.pot)}</span><span class="ap-n">${info.pagados.length} jugando${info.entrante > 0 ? ` · +${formatMoneda(info.entrante)} 🔥` : ''}</span>`;
+
+  let accion = '';
+  if (p.jugado) {
+    if (info.estado === 'ganado') accion = `<span class="ap-result gano">🏆 ${info.ganadores.map(g => escapar(g.nombre)).join(', ')} ${info.ganadores.length > 1 ? 'reparten' : 'gana'} ${formatMoneda(info.premio)}${info.ganadores.length > 1 ? ' c/u' : ''}</span>`;
+    else if (info.pagados.length > 0) accion = `<span class="ap-result vacante">Nadie acertó · ${formatMoneda(info.pot)} se acumula 🔥</span>`;
+    else accion = `<span class="ap-result">Sin apuestas</span>`;
+  } else if (bloqueado) {
+    accion = `<span class="ap-result">🔒 Apuesta cerrada</span>`;
+  } else if (miEntrada) {
+    accion = `<span class="ap-en">✓ Apostando ${miEntrada.pago ? '<span class="ap-pagado">pagado</span>' : `<span class="ap-debe">debes ${formatMoneda(stake)}</span>`}</span> <button class="boton secundario pequeno" data-accion="apuesta-salir" data-partido="${p.id}">Salir</button>`;
+  } else {
+    accion = `<button class="boton dorado pequeno" data-accion="apuesta-entrar" data-partido="${p.id}">💸 Entrar (${formatMoneda(stake)})</button>`;
+  }
+
+  let pagos = '';
+  if (org && info.participantes.length > 0 && !p.jugado) {
+    pagos = `<div class="ap-pagos">${info.participantes.map(j => {
+      const pagado = estado.apuestas[j.id][p.id].pago;
+      return `<button class="ap-chip ${pagado ? 'pagado' : ''}" data-accion="apuesta-pago" data-jug="${j.id}" data-partido="${p.id}" title="${pagado ? 'Pagado' : 'Marcar pago'}">${escapar(j.nombre)} ${pagado ? '✓' : '○'}</button>`;
+    }).join('')}</div>`;
+  }
+
+  return `<div class="apuesta-strip"><div class="ap-top">${infoPozo}<span class="ap-accion">${accion}</span></div>${pagos}</div>`;
 }
 
 function vistaPosiciones() {
@@ -228,22 +301,47 @@ function vistaFinal() {
 
 function vistaBote() {
   const lider = tablaPosiciones()[0];
-  const faltan = estado.jugadores.filter(j => !j.pago);
   const org = esOrganizador();
-  return `<div class="titulo-vista">El bote 💰</div>
-    <div class="subtitulo-vista">Aquí se lleva la cuenta de la plata. Los pagos se hacen entre ustedes (efectivo o transferencia); la web solo registra.</div>
-    <div class="bote-hero"><div class="etq">BOTE RECAUDADO</div><div class="monto">${formatMoneda(boteRecaudado())}</div>
-      <div class="nota">${jugadoresQuePagaron()} de ${estado.jugadores.length} ya pagaron · meta: ${formatMoneda(botePotencial())}</div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">🏅 Va ganando</div>
+  const ap = calcularApuestas();
+  let totalEntradas = 0; const ganados = [];
+  estado.partidos.forEach(p => {
+    const inf = ap.porPartido[p.id]; if (!inf) return;
+    totalEntradas += inf.pagados.length;
+    if (inf.estado === 'ganado') ganados.push({ p, inf });
+  });
+  const totalApuestas = totalEntradas * (estado.config.montoPartido || 0);
+
+  return `<div class="titulo-vista">El dinero 💰</div>
+    <div class="subtitulo-vista">La web lleva la cuenta; los pagos se hacen entre ustedes (efectivo o transferencia).</div>
+
+    <div class="seccion-sep">🏆 Bote del Mundial</div>
+    <div class="bote-hero"><div class="etq">RECAUDADO EN ABONOS</div><div class="monto">${formatMoneda(boteRecaudado())}</div>
+      <div class="nota">${jugadoresQuePagaron()} de ${estado.jugadores.length} con cuota completa · meta ${formatMoneda(botePotencial())}</div></div>
+    <div class="tarjeta"><div class="tarjeta-titulo">🏅 Va ganando el bote</div>
       ${lider ? `<div style="display:flex;align-items:center;gap:12px"><div class="avatar" style="background:${lider.jugador.color};width:46px;height:46px;font-size:1.1rem">${escapar(lider.jugador.nombre.charAt(0))}</div>
-        <div><div style="font-weight:800;font-size:1.1rem">${escapar(lider.jugador.nombre)}</div><div class="texto-mini">${lider.puntos} puntos · si terminara hoy, se llevaría ${formatMoneda(botePotencial())}</div></div></div>` : '<p class="texto-mini">Aún no hay puntos.</p>'}</div>
-    <div class="tarjeta"><div class="tarjeta-titulo">💵 Estado de pagos</div>
-      <ul class="lista-jug">${estado.jugadores.map(j => `<li><div class="avatar" style="background:${j.color}">${escapar(j.nombre.charAt(0))}</div>
-        <span class="nombre">${escapar(j.nombre)}</span><span>${formatMoneda(estado.config.montoApuesta)}</span>
-        <span class="estado-pago ${j.pago ? 'pago' : 'debe'}">${j.pago ? '✓ Pagó' : 'Pendiente'}</span>
-        ${org ? `<button class="boton secundario pequeno" data-accion="toggle-pago" data-jug="${j.id}">${j.pago ? 'Marcar deuda' : 'Marcar pago'}</button>` : ''}</li>`).join('')}</ul>
-      ${faltan.length > 0 ? `<div class="aviso demo mt8"><span class="ico">⏰</span><div>Faltan por pagar: <strong>${faltan.map(j => escapar(j.nombre)).join(', ')}</strong>.</div></div>` : `<div class="aviso info mt8"><span class="ico">✅</span><div>¡Todos pagaron! El bote está completo.</div></div>`}
-      ${!org ? '<p class="texto-mini mt8">Solo el organizador puede registrar los pagos.</p>' : ''}</div>`;
+        <div><div style="font-weight:800;font-size:1.1rem">${escapar(lider.jugador.nombre)}</div><div class="texto-mini">${lider.puntos} puntos · si terminara hoy se lleva ${formatMoneda(botePotencial())}</div></div></div>` : '<p class="texto-mini">Aún no hay puntos.</p>'}</div>
+    <div class="tarjeta"><div class="tarjeta-titulo">💵 Abonos · cuota ${formatMoneda(estado.config.montoApuesta)}</div>
+      <ul class="lista-jug">${estado.jugadores.map(j => {
+        const completo = pagoCompleto(j);
+        return `<li><div class="avatar" style="background:${j.color}">${escapar(j.nombre.charAt(0))}</div>
+          <span class="nombre">${escapar(j.nombre)}</span>
+          <span class="abono-monto">${formatMoneda(j.abonado || 0)} / ${formatMoneda(estado.config.montoApuesta)}</span>
+          <span class="estado-pago ${completo ? 'pago' : 'debe'}">${completo ? '✓ Completo' : 'faltan ' + formatMoneda(saldoJugador(j))}</span>
+          ${org ? `<button class="boton secundario pequeno" data-accion="abono" data-jug="${j.id}">+ Abono</button>${completo ? `<button class="boton secundario pequeno" data-accion="abono-reset" data-jug="${j.id}" title="Reiniciar abono">↺</button>` : `<button class="boton secundario pequeno" data-accion="abono-full" data-jug="${j.id}">Completar</button>`}` : ''}</li>`;
+      }).join('')}</ul>
+      ${!org ? '<p class="texto-mini mt8">Solo el organizador registra los abonos.</p>' : ''}</div>
+
+    <div class="seccion-sep">💸 Apuestas por partido</div>
+    <div class="bote-hero jackpot"><div class="etq">🔥 POZO ACUMULADO</div><div class="monto">${formatMoneda(ap.jackpot)}</div>
+      <div class="nota">Se lo lleva el próximo que acierte el marcador exacto</div></div>
+    <div class="tarjeta"><div class="tarjeta-titulo">📊 Resumen de apuestas</div>
+      <div class="resumen2">
+        <div><div class="texto-mini">Monto por partido</div><div class="r2-val">${formatMoneda(estado.config.montoPartido)}</div></div>
+        <div><div class="texto-mini">Entradas pagadas</div><div class="r2-val">${totalEntradas}</div></div>
+        <div><div class="texto-mini">Total movido</div><div class="r2-val">${formatMoneda(totalApuestas)}</div></div>
+      </div>
+      <p class="texto-mini mt8">Para entrar a las apuestas y marcar pagos por partido, ve a <strong>⚽ Partidos</strong>.</p></div>
+    ${ganados.length ? `<div class="tarjeta"><div class="tarjeta-titulo">🏆 Pozos ya ganados</div>${ganados.map(({ p, inf }) => `<div class="gan-fila"><span>${getEquipo(p.local).bandera} ${p.golesLocal}-${p.golesVisita} ${getEquipo(p.visita).bandera}</span><span class="texto-mini"><strong>${inf.ganadores.map(g => escapar(g.nombre)).join(', ')}</strong> · ${formatMoneda(inf.premio)}${inf.ganadores.length > 1 ? ' c/u' : ''}</span></div>`).join('')}</div>` : ''}`;
 }
 
 function vistaAdmin() {
@@ -271,7 +369,8 @@ function vistaAdmin() {
     <div class="tarjeta"><div class="tarjeta-titulo">⚙️ Configuración</div>
       <div class="campo"><label>Nombre de la polla</label><input type="text" value="${escapar(cfg.nombrePolla)}" data-accion="cfg" data-campo="nombrePolla"></div>
       <div class="fila-campos"><div class="campo"><label>Código de invitación</label><input type="text" value="${escapar(cfg.codigoInvitacion)}" data-accion="cfg" data-campo="codigoInvitacion"></div>
-        <div class="campo"><label>Monto por jugador (${escapar(cfg.moneda)})</label><input type="number" min="0" value="${cfg.montoApuesta}" data-accion="cfg" data-campo="montoApuesta"></div></div>
+        <div class="campo"><label>Cuota del bote (${escapar(cfg.moneda)})</label><input type="number" min="0" value="${cfg.montoApuesta}" data-accion="cfg" data-campo="montoApuesta"></div></div>
+      <div class="campo"><label>Monto por apuesta de partido (${escapar(cfg.moneda)})</label><input type="number" min="0" value="${cfg.montoPartido}" data-accion="cfg" data-campo="montoPartido"></div>
       <div class="tarjeta-titulo" style="margin-top:8px">Puntos</div>
       <div class="fila-campos"><div class="campo"><label>Marcador exacto</label><input type="number" min="0" value="${cfg.puntos.marcadorExacto}" data-accion="cfg-pts" data-campo="marcadorExacto"></div>
         <div class="campo"><label>Resultado acertado</label><input type="number" min="0" value="${cfg.puntos.resultadoAcertado}" data-accion="cfg-pts" data-campo="resultadoAcertado"></div>
@@ -280,7 +379,7 @@ function vistaAdmin() {
     <div class="tarjeta"><div class="tarjeta-titulo">👥 Jugadores</div>
       <ul class="lista-jug">${estado.jugadores.map(j => `<li><div class="avatar" style="background:${j.color}">${escapar(j.nombre.charAt(0))}</div>
         <span class="nombre">${escapar(j.nombre)} ${j.esOrganizador ? '<span class="chip grupo">organizador</span>' : ''}</span>
-        <span class="estado-pago ${j.pago ? 'pago' : 'debe'}">${j.pago ? '✓ Pagó' : 'Debe'}</span>
+        <span class="estado-pago ${pagoCompleto(j) ? 'pago' : 'debe'}">${pagoCompleto(j) ? '✓ Pagó' : 'Debe'}</span>
         ${!j.esOrganizador ? `<button class="boton secundario pequeno" data-accion="hacer-org" data-jug="${j.id}">Hacer organizador</button>` : ''}
         ${j.id !== estado.usuarioActual ? `<button class="boton peligro pequeno" data-accion="quitar-jug" data-jug="${j.id}">Quitar</button>` : ''}</li>`).join('')}</ul>
       <div class="boton-fila mt8"><input type="text" id="nuevo-jugador" placeholder="Nombre del nuevo jugador" class="campo" style="margin:0;flex:1;min-width:160px"><button class="boton" data-accion="agregar-jug">＋ Agregar</button></div></div>
@@ -423,9 +522,46 @@ document.addEventListener('click', (e) => {
     case 'filtro-cal': filtroCal = el.dataset.filtro; render(); break;
     case 'salir': Auth.salir(); break;
 
-    case 'toggle-pago': {
+    case 'abono': {
       if (!esOrganizador()) return;
-      const j = getJugador(el.dataset.jug); if (j) { j.pago = !j.pago; sync(Datos.guardarJugador(j.id)); }
+      const j = getJugador(el.dataset.jug); if (!j) return;
+      const txt = prompt(`¿Cuánto abona ${j.nombre}? (cuota ${formatMoneda(estado.config.montoApuesta)}, lleva ${formatMoneda(j.abonado || 0)})`, '');
+      if (txt == null) return;
+      const monto = Math.max(0, parseFloat(String(txt).replace(',', '.')) || 0);
+      j.abonado = (j.abonado || 0) + monto;
+      sync(Datos.guardarJugador(j.id)); render(); break;
+    }
+    case 'abono-full': {
+      if (!esOrganizador()) return;
+      const j = getJugador(el.dataset.jug); if (j) { j.abonado = estado.config.montoApuesta; sync(Datos.guardarJugador(j.id)); }
+      render(); break;
+    }
+    case 'abono-reset': {
+      if (!esOrganizador()) return;
+      const j = getJugador(el.dataset.jug); if (j) { j.abonado = 0; sync(Datos.guardarJugador(j.id)); }
+      render(); break;
+    }
+    case 'apuesta-entrar': {
+      const yo = usuario(); if (!yo) return;
+      const p = estado.partidos.find(x => x.id === el.dataset.partido);
+      if (!p || partidoBloqueado(p)) return;
+      if (!estado.apuestas[yo.id]) estado.apuestas[yo.id] = {};
+      estado.apuestas[yo.id][p.id] = { pago: false };
+      sync(Datos.guardarApuesta(yo.id, p.id)); render(); break;
+    }
+    case 'apuesta-salir': {
+      const yo = usuario(); if (!yo) return;
+      const p = estado.partidos.find(x => x.id === el.dataset.partido);
+      if (!p || partidoBloqueado(p)) return;
+      sync(Datos.eliminarApuesta(yo.id, p.id)); render(); break;
+    }
+    case 'apuesta-pago': {
+      if (!esOrganizador()) return;
+      const jid = el.dataset.jug, pid = el.dataset.partido;
+      if (estado.apuestas[jid] && estado.apuestas[jid][pid]) {
+        estado.apuestas[jid][pid].pago = !estado.apuestas[jid][pid].pago;
+        sync(Datos.guardarApuesta(jid, pid));
+      }
       render(); break;
     }
     case 'hacer-org': {

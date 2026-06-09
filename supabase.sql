@@ -14,6 +14,7 @@ create table if not exists config (
   codigo        text,
   moneda        text,
   monto         int,
+  monto_partido int default 2,
   puntos        jsonb,
   campeon_real  text,
   subcampeon_real text
@@ -24,6 +25,7 @@ create table if not exists jugadores (
   nombre         text not null,
   color          text,
   pago           boolean default false,
+  abonado        int default 0,
   es_organizador boolean default false,
   pin            text default '',
   creado         timestamptz default now()
@@ -57,6 +59,13 @@ create table if not exists picks_final (
   subcampeon text
 );
 
+create table if not exists apuestas (
+  jugador_id uuid references jugadores(id) on delete cascade,
+  partido_id text references partidos(id) on delete cascade,
+  pago       boolean default false,
+  primary key (jugador_id, partido_id)
+);
+
 -- ---------- PERMISOS ----------
 -- Seguridad "casual" para un grupo privado de amigos: cualquiera
 -- con la clave pública (anon) y el código de invitación puede jugar.
@@ -66,12 +75,14 @@ alter table jugadores    enable row level security;
 alter table partidos     enable row level security;
 alter table predicciones enable row level security;
 alter table picks_final  enable row level security;
+alter table apuestas     enable row level security;
 
 create policy "acceso_grupo" on config       for all using (true) with check (true);
 create policy "acceso_grupo" on jugadores    for all using (true) with check (true);
 create policy "acceso_grupo" on partidos     for all using (true) with check (true);
 create policy "acceso_grupo" on predicciones for all using (true) with check (true);
 create policy "acceso_grupo" on picks_final  for all using (true) with check (true);
+create policy "acceso_grupo" on apuestas     for all using (true) with check (true);
 
 -- ---------- TIEMPO REAL ----------
 -- Para que los cambios (resultados, predicciones) aparezcan al
@@ -81,6 +92,7 @@ alter publication supabase_realtime add table jugadores;
 alter publication supabase_realtime add table partidos;
 alter publication supabase_realtime add table predicciones;
 alter publication supabase_realtime add table picks_final;
+alter publication supabase_realtime add table apuestas;
 
 -- ¡Listo! Los partidos y la configuración se crean solos la
 -- primera vez que abras la app con tus claves puestas.

@@ -153,12 +153,13 @@ const PARTIDOS_SEMILLA = [
 ];
 
 /* --- JUGADORES DE EJEMPLO (solo modo local de prueba) ------- */
+// abonado = cuánto ha pagado de su cuota del bote general (de a poco).
 const JUGADORES_SEMILLA = [
-  { id: 'u1', nombre: 'Mauricio', color: '#0540A6', pago: true,  esOrganizador: true,  pin: '' },
-  { id: 'u2', nombre: 'Carlos',   color: '#E4002B', pago: true,  esOrganizador: false, pin: '' },
-  { id: 'u3', nombre: 'Ana',      color: '#E6A700', pago: true,  esOrganizador: false, pin: '' },
-  { id: 'u4', nombre: 'Diego',    color: '#0A8754', pago: false, esOrganizador: false, pin: '' },
-  { id: 'u5', nombre: 'Laura',    color: '#7c3aed', pago: true,  esOrganizador: false, pin: '' },
+  { id: 'u1', nombre: 'Mauricio', color: '#0540A6', abonado: 10, esOrganizador: true,  pin: '' },
+  { id: 'u2', nombre: 'Carlos',   color: '#E4002B', abonado: 5,  esOrganizador: false, pin: '' },
+  { id: 'u3', nombre: 'Ana',      color: '#E6A700', abonado: 10, esOrganizador: false, pin: '' },
+  { id: 'u4', nombre: 'Diego',    color: '#0A8754', abonado: 0,  esOrganizador: false, pin: '' },
+  { id: 'u5', nombre: 'Laura',    color: '#7c3aed', abonado: 10, esOrganizador: false, pin: '' },
 ];
 
 /* --- CONFIGURACIÓN POR DEFECTO ------------------------------ */
@@ -166,6 +167,7 @@ const CONFIG_DEFAULT = {
   nombrePolla: 'Polla Mundialista 2026',
   codigoInvitacion: 'ECUADOR26',
   moneda: 'USD',
-  montoApuesta: 10,
+  montoApuesta: 10,   // cuota del BOTE GENERAL del Mundial (se puede abonar por partes)
+  montoPartido: 2,    // lo que cuesta entrar a la apuesta de UN partido
   puntos: { marcadorExacto: 5, resultadoAcertado: 3, campeon: 15, subcampeon: 7 },
 };
