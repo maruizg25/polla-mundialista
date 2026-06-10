@@ -149,6 +149,38 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
 .pred-btn.sel.es-resultado { background: #16a34a; border-color: #16a34a; }
 .pred-btn:disabled { cursor: default; }
 .pred-btn:disabled:not(.sel):not(.es-resultado) { opacity: .5; }
+.pred-btn:active:not(:disabled) { transform: scale(.95); }
+.pred-btn.sel { animation: popSel .26s ease; }
+.pred-btn .check { font-weight: 900; }
+@keyframes popSel { 0% { transform: scale(.88); } 55% { transform: scale(1.07); } 100% { transform: scale(1); } }
+
+/* Barra de progreso de pronósticos */
+.progreso-card { background: var(--blanco); border-radius: var(--radio); box-shadow: var(--sombra); padding: 14px 16px; margin-bottom: 16px; }
+.progreso-top { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: .92rem; margin-bottom: 9px; gap: 10px; }
+.progreso-top strong { color: var(--azul); font-size: 1.1rem; }
+.progreso-barra { height: 12px; background: var(--gris-claro); border-radius: 999px; overflow: hidden; }
+.progreso-fill { height: 100%; background: linear-gradient(90deg, var(--amarillo), #16a34a); border-radius: 999px; transition: width .55s cubic-bezier(.2, .8, .2, 1); }
+.grupo-cont { font-size: .78rem; font-weight: 800; color: var(--gris); background: var(--gris-claro); padding: 2px 10px; border-radius: 999px; margin-left: 8px; }
+.grupo-cont.ok { background: #dcfce7; color: #15803d; }
+
+.pred-quitar { text-align: center; margin-top: 10px; }
+.link-quitar { background: none; border: none; color: var(--gris); font-size: .82rem; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: underline; padding: 4px; }
+.link-quitar:hover { color: var(--rojo); }
+
+/* Toast (aviso flotante) */
+.toast { position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%) translateY(22px); background: var(--tinta); color: var(--blanco); padding: 12px 22px; border-radius: 999px; font-weight: 700; font-size: .95rem; box-shadow: var(--sombra-md); z-index: 200; opacity: 0; transition: opacity .3s, transform .3s; pointer-events: none; max-width: 90vw; text-align: center; }
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.exito { background: linear-gradient(135deg, #15803d, #16a34a); }
+
+/* Chispitas al marcar */
+.chispas { position: fixed; z-index: 210; pointer-events: none; }
+.chispas span { position: absolute; font-size: 18px; transform: translate(-50%, -50%); animation: chispa .7s ease-out forwards; }
+@keyframes chispa { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(.3) rotate(35deg); } }
+
+/* Confeti al completar todos */
+.confeti { position: fixed; inset: 0; pointer-events: none; z-index: 205; overflow: hidden; }
+.confeti span { position: absolute; top: -8%; animation: caer linear 1 forwards; }
+@keyframes caer { 0% { transform: translateY(-12vh) rotate(0); opacity: 1; } 100% { transform: translateY(112vh) rotate(540deg); opacity: .85; } }
 
 .admin-1x2 { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
 .res-btn { border: 2px solid var(--linea); background: var(--blanco); border-radius: 10px; min-width: 42px; height: 42px; font-size: 1.1rem; font-weight: 800; cursor: pointer; font-family: inherit; display: grid; place-items: center; }

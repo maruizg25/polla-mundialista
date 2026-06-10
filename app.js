@@ -64,6 +64,52 @@ function escapar(t) {
 function sync(promesa) { if (promesa && promesa.catch) promesa.catch(e => console.warn('No se pudo guardar:', e)); }
 
 /* ----------------------------------------------------------------
+   UX DIVERTIDA (progreso, chispas, confeti, avisos)
+   ---------------------------------------------------------------- */
+function progresoPredicciones() {
+  const pr = (estado.predicciones[estado.usuarioActual] || {}).partidos || {};
+  const abiertos = estado.partidos.filter(p => !partidoBloqueado(p));
+  const hechos = abiertos.filter(p => pr[p.id]).length;
+  return { total: abiertos.length, hechos };
+}
+function toast(msg, tipo) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (tipo || '');
+  t.innerHTML = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('visible'));
+  setTimeout(() => { t.classList.remove('visible'); setTimeout(() => t.remove(), 350); }, 2600);
+}
+function chispitas(rect) {
+  if (!rect) return;
+  const cont = document.createElement('div');
+  cont.className = 'chispas';
+  cont.style.left = (rect.left + rect.width / 2) + 'px';
+  cont.style.top = (rect.top + rect.height / 2) + 'px';
+  const dirs = [[-36, -30], [36, -30], [30, 34], [-30, 34]];
+  ['✨', '⚽', '⭐', '🎉'].forEach((e, i) => { const s = document.createElement('span'); s.textContent = e; s.style.setProperty('--dx', dirs[i][0] + 'px'); s.style.setProperty('--dy', dirs[i][1] + 'px'); cont.appendChild(s); });
+  document.body.appendChild(cont);
+  setTimeout(() => cont.remove(), 750);
+}
+function festejo() {
+  toast('🎉 ¡Completaste todos tus pronósticos! 🏆', 'exito');
+  const cont = document.createElement('div');
+  cont.className = 'confeti';
+  const emojis = ['⚽', '🎉', '🏆', '🥳', '🇪🇨', '✨', '🔥', '⭐'];
+  for (let i = 0; i < 50; i++) {
+    const s = document.createElement('span');
+    s.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    s.style.left = (Math.random() * 100) + '%';
+    s.style.animationDuration = (1.8 + Math.random() * 1.8) + 's';
+    s.style.animationDelay = (Math.random() * 0.5) + 's';
+    s.style.fontSize = (16 + Math.random() * 18) + 'px';
+    cont.appendChild(s);
+  }
+  document.body.appendChild(cont);
+  setTimeout(() => cont.remove(), 4200);
+}
+
+/* ----------------------------------------------------------------
    MOTOR DE PUNTOS (1 punto por acertar L / E / V)
    ---------------------------------------------------------------- */
 function puntosDePartido(pred, p) {
@@ -133,12 +179,27 @@ function tarjetaResumenPartido(p, jugadorId) {
 function vistaPartidos() {
   const yo = usuario();
   const pr = estado.predicciones[yo.id] || { partidos: {} };
+  const { total, hechos } = progresoPredicciones();
+  const pct = total ? Math.round(hechos / total * 100) : 0;
+  const msg = total === 0 ? 'No hay partidos abiertos por ahora.' : (hechos === total ? '¡Listo! Pronosticaste todos 🎉' : (hechos === 0 ? '¡Dale, empieza a pronosticar! 🎯' : `Llevas ${hechos} de ${total}`));
+  const emoji = pct === 100 ? '🏆' : (pct >= 66 ? '🔥' : (pct >= 33 ? '💪' : '🎯'));
   const grupos = {};
   estado.partidos.forEach(p => { (grupos[p.grupo] = grupos[p.grupo] || []).push(p); });
-  let html = `<div class="titulo-vista">Partidos y pronósticos</div><div class="subtitulo-vista">Toca quién crees que gana, o empate. 1 punto por acierto. Puedes cambiar hasta que empiece el partido.</div>`;
+
+  let html = `<div class="titulo-vista">Partidos y pronósticos</div>
+    <div class="subtitulo-vista">Toca quién crees que gana, o empate. 1 punto por acierto.</div>
+    <div class="progreso-card">
+      <div class="progreso-top"><span>${emoji} ${msg}</span><strong>${pct}%</strong></div>
+      <div class="progreso-barra"><div class="progreso-fill" style="width:${pct}%"></div></div>
+    </div>`;
+
   Object.keys(grupos).sort().forEach(g => {
-    html += `<div class="grupo-titulo">📋 Grupo ${g}</div>`;
-    grupos[g].sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach(p => { html += filaPartido(p, pr.partidos[p.id]); });
+    const ps = grupos[g].sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    const ab = ps.filter(p => !partidoBloqueado(p));
+    const he = ab.filter(p => pr.partidos[p.id]).length;
+    const okG = ab.length > 0 && he === ab.length;
+    html += `<div class="grupo-titulo">📋 Grupo ${g} <span class="grupo-cont ${okG ? 'ok' : ''}">${he}/${ab.length}${okG ? ' ✓' : ''}</span></div>`;
+    ps.forEach(p => { html += filaPartido(p, pr.partidos[p.id]); });
   });
   return html;
 }
@@ -149,8 +210,9 @@ function filaPartido(p, pred) {
   const chip = tieneRes ? '<span class="chip jugado">Finalizado</span>' : (bloqueado ? '<span class="chip live">En juego</span>' : '<span class="chip grupo">Abierto</span>');
 
   const opt = (r, txt) => {
-    const cls = (pred === r ? 'sel ' : '') + (tieneRes && p.resultado === r ? 'es-resultado ' : '');
-    return `<button class="pred-btn ${cls}" ${fijo ? 'disabled' : `data-accion="pred" data-partido="${p.id}" data-r="${r}"`}>${txt}</button>`;
+    const sel = pred === r;
+    const cls = (sel ? 'sel ' : '') + (tieneRes && p.resultado === r ? 'es-resultado ' : '');
+    return `<button class="pred-btn ${cls}" ${fijo ? 'disabled' : `data-accion="pred" data-partido="${p.id}" data-r="${r}"`}>${sel ? '<span class="check">✓</span> ' : ''}${txt}</button>`;
   };
   const control = `<div class="pred-1x2">
     ${opt('L', `${getEquipo(p.local).bandera} ${nombreEquipo(p.local)}`)}
@@ -166,9 +228,11 @@ function filaPartido(p, pred) {
     pie = `<div class="pred-pie"><span>El partido empezó · pronóstico cerrado${pred ? `: <strong>${textoResultado(p, pred)}</strong>` : ''}</span><span class="candado">🔒</span></div>`;
   }
 
+  const quitar = (pred && !fijo) ? `<div class="pred-quitar"><button class="link-quitar" data-accion="pred-quitar" data-partido="${p.id}">Quitar mi pronóstico</button></div>` : '';
   return `<div class="partido">
       <div class="partido-cab"><span>${formatFecha(p.fecha)} · ${escapar(p.estadio || '')}</span>${chip}</div>
       ${control}
+      ${quitar}
       ${pie}</div>`;
 }
 
@@ -389,13 +453,27 @@ document.addEventListener('click', (e) => {
     case 'filtro-cal': filtroCal = el.dataset.filtro; render(); break;
     case 'salir': Auth.salir(); break;
 
-    case 'pred': {  // el jugador toca L / E / V
+    case 'pred': {  // el jugador toca L / E / V (solo fija; no quita)
       const p = estado.partidos.find(x => x.id === el.dataset.partido);
       if (!p || partidoBloqueado(p)) return;
       const pr = estado.predicciones[estado.usuarioActual] || (estado.predicciones[estado.usuarioActual] = { partidos: {}, campeon: null, subcampeon: null });
-      const r = el.dataset.r;
-      pr.partidos[p.id] = (pr.partidos[p.id] === r) ? null : r;  // tocar de nuevo quita
+      const antes = progresoPredicciones();
+      const eraNuevo = !pr.partidos[p.id];
+      const rect = el.getBoundingClientRect();
+      pr.partidos[p.id] = el.dataset.r;
       sync(Datos.guardarPrediccion(estado.usuarioActual, p.id));
+      const desp = progresoPredicciones();
+      const completoAhora = desp.total > 0 && desp.hechos === desp.total && antes.hechos < antes.total;
+      render();
+      if (completoAhora) festejo();
+      else if (eraNuevo) chispitas(rect);
+      break;
+    }
+    case 'pred-quitar': {
+      const p = estado.partidos.find(x => x.id === el.dataset.partido);
+      if (!p || partidoBloqueado(p)) return;
+      const pr = estado.predicciones[estado.usuarioActual];
+      if (pr) { pr.partidos[p.id] = null; sync(Datos.guardarPrediccion(estado.usuarioActual, p.id)); }
       render(); break;
     }
     case 'res': {   // el organizador marca el resultado
