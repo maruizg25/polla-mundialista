@@ -16,6 +16,7 @@ const Auth = (function () {
   let error = '';
   let aviso = '';
   let creando = false;  // evita crear el jugador dos veces
+  let correoPendienteConfirmacion = '';
 
   const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const COLORES = ['#0540A6', '#E4002B', '#E6A700', '#0A8754', '#7c3aed', '#0891b2', '#be123c', '#c2410c'];
@@ -102,6 +103,7 @@ const Auth = (function () {
       cuerpo = `<p class="login-sub">Entra con tu correo y contraseña.</p>
         ${error ? `<div class="login-error">${esc(error)}</div>` : ''}
         ${aviso ? `<div class="login-ok">${esc(aviso)}</div>` : ''}
+        ${correoPendienteConfirmacion ? `<div class="login-ok">No llegó el correo de confirmación? Puedes reenviarlo aquí.</div><button class="login-link" data-accion="login-reenviar-confirmacion">Reenviar correo de confirmación</button>` : ''}
         <div class="campo"><input type="email" id="log-email" placeholder="Correo electrónico" autocomplete="email"></div>
         <div class="campo"><input type="password" id="log-pass" placeholder="Contraseña" autocomplete="current-password"></div>
         <button class="boton login-boton" data-accion="login-entrar">Iniciar sesión →</button>
@@ -132,6 +134,7 @@ const Auth = (function () {
       const email = (document.getElementById('log-email').value || '').trim();
       const pass = document.getElementById('log-pass').value || '';
       if (!email || !pass) { error = 'Escribe tu correo y contraseña.'; pintar(); return; }
+      correoPendienteConfirmacion = email;
       el.disabled = true; el.textContent = 'Entrando…';
       const { error: err } = await Datos.authLogin(email, pass);
       if (err) { error = traducir(err.message); aviso = ''; pintar(); }
@@ -152,8 +155,17 @@ const Auth = (function () {
         try { const j = await Datos.crearJugador({ nombre, email, color: COLORES[est.jugadores.length % COLORES.length] }); entrarApp(j.id); }
         catch (e2) { error = 'Cuenta creada, pero no se pudo guardar el jugador. Inicia sesión.'; modo = 'login'; pintar(); }
       } else {
-        modo = 'login'; error = ''; aviso = 'Te enviamos un correo para confirmar tu cuenta. Ábrelo y luego inicia sesión.'; pintar();
+        modo = 'login'; error = ''; aviso = 'Te enviamos un correo para confirmar tu cuenta. Ábrelo y luego inicia sesión.'; correoPendienteConfirmacion = email; pintar();
       }
+      return;
+    }
+
+    if (a === 'login-reenviar-confirmacion') {
+      const email = (document.getElementById('log-email').value || correoPendienteConfirmacion || '').trim();
+      if (!email) { error = 'Escribe tu correo arriba para reenviar la confirmación.'; pintar(); return; }
+      const { error: err } = await Datos.authReenviarConfirmacion(email);
+      if (err) { error = traducir(err.message); aviso = ''; pintar(); return; }
+      error = ''; aviso = 'Reenviamos el correo de confirmación. Revisa también spam o promociones.'; correoPendienteConfirmacion = email; pintar();
       return;
     }
 
@@ -178,6 +190,7 @@ const Auth = (function () {
     if (/Invalid login/i.test(msg)) return 'Correo o contraseña incorrectos.';
     if (/already registered|already been registered|already exists/i.test(msg)) return 'Ese correo ya tiene cuenta. Inicia sesión.';
     if (/Email not confirmed/i.test(msg)) return 'Debes confirmar tu correo antes de entrar.';
+    if (/over_email_send_rate_limit|email rate limit/i.test(msg)) return 'Supabase limitó el envío. Intenta de nuevo en unos minutos.';
     if (/at least 6|password should be/i.test(msg)) return 'La contraseña debe tener al menos 6 caracteres.';
     if (/valid email|invalid format/i.test(msg)) return 'Escribe un correo válido.';
     return msg;
