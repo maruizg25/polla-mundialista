@@ -183,27 +183,27 @@ function tablaPosiciones(faseId) {
 }
 function posicionDe(jugadorId) { return tablaPosiciones().findIndex(x => x.jugador.id === jugadorId) + 1; }
 function premioBote() { return (estado.config.montoApuesta || 0) * estado.jugadores.length; }
-function premioFase(faseId) { return faseAbierta(faseId) ? (faseInfo(faseId).monto || 0) * estado.jugadores.length : 0; }
+function montoVisualFase(faseId) {
+  const fases = fasesCfg();
+  const f = faseInfo(faseId);
+  const monto = Number(f.monto || 0);
+  const fg = fases.find(x => x.id === 'grupos');
+  const fe = fases.find(x => x.id === 'eliminatorias');
+  const ff = fases.find(x => x.id === 'final');
+  const legacySoloGrupos = !!(fg && fe && ff
+    && Number(fg.monto || 0) === 1
+    && Number(fe.monto || 0) === 0
+    && Number(ff.monto || 0) === 0);
+  if (faseId === 'grupos' && legacySoloGrupos) {
+    return Number(estado.config.montoApuesta || 0) || 5;
+  }
+  return monto;
+}
+function premioFase(faseId) { return faseAbierta(faseId) ? montoVisualFase(faseId) * estado.jugadores.length : 0; }
 function premioTotal() { return fasesCfg().reduce((s, f) => s + premioFase(f.id), 0); }
 function formatearMontoBase() {
-  const fases = fasesCfg();
-  const todosIguales = fases.length > 0 && fases.every(f => (f.id === 'final' ? (f.monto == null || f.monto === 0) : (f.monto == null || f.monto === 1)));
-  const faseGrupos = fases.find(f => f.id === 'grupos');
-  const faseElim = fases.find(f => f.id === 'eliminatorias');
-  const faseFinal = fases.find(f => f.id === 'final');
-  const legadoSoloGrupos = !!(faseGrupos && faseElim && faseFinal
-    && Number(faseGrupos.monto || 0) === 1
-    && Number(faseElim.monto || 0) === 0
-    && Number(faseFinal.monto || 0) === 0);
-  let cambio = false;
-  if (todosIguales) fases.forEach(f => { f.monto = (f.id === 'final' ? 0 : 5); });
-  if (todosIguales) cambio = true;
-  if (!todosIguales && legadoSoloGrupos) {
-    faseGrupos.monto = 5;
-    cambio = true;
-  }
-  if (!estado.config.montoApuesta || estado.config.montoApuesta === 1) { estado.config.montoApuesta = 5; cambio = true; }
-  return cambio;
+  // Solo compatibilidad visual: no mutamos configuración persistida.
+  return false;
 }
 
 function codigoEspnEquipo(c) {
@@ -988,7 +988,7 @@ function alHaberCambios() {
 async function iniciar() {
   pintarBanderas();
   await Datos.cargar(estado, alHaberCambios);
-  if (formatearMontoBase()) sync(Datos.guardarConfig());
+  formatearMontoBase();
   Auth.iniciar(estado, () => { estado.vista = 'inicio'; render(); });
 }
 window.__APP_STATE__ = estado;
