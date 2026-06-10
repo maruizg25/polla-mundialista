@@ -39,11 +39,10 @@ para compartir por WhatsApp.
 | Acertar el subcampeón | 7 |
 
 ## 🛠️ Para el organizador
-El **primero que se registra** queda como organizador. Desde la pestaña
-**Organizador** puede: ingresar resultados reales (los puntos se calculan solos),
-definir el campeón/subcampeón al final, cambiar montos y puntos, y administrar
-jugadores. El botón *“Cargar resultados de ejemplo”* sirve para ver el
-funcionamiento sin esperar al Mundial.
+Solo la cuenta con el correo configurado como organizador (y su clave admin)
+ve la pestaña **Organizador**. Desde ahí puede: ingresar resultados reales (los
+puntos se calculan solos), definir el campeón/subcampeón al final, cambiar
+montos y puntos, y revisar el avance de pronósticos de todos los jugadores.
 
 ## ✏️ Poner los partidos reales
 Edita el archivo **`datos.js`** (equipos y partidos, con comentarios). Cuando

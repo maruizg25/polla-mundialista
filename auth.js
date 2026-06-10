@@ -21,6 +21,7 @@ const Auth = (function () {
   const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const emailL = e => String(e || '').toLowerCase().trim();
   const COLORES = ['#0540A6', '#E4002B', '#E6A700', '#0A8754', '#7c3aed', '#0891b2', '#be123c', '#c2410c'];
+  const claveAdminCfg = String(typeof CLAVE_ADMIN === 'string' ? CLAVE_ADMIN : '').trim();
 
   function entrarApp(jugadorId) {
     est.usuarioActual = jugadorId;
@@ -98,6 +99,7 @@ const Auth = (function () {
         <div class="campo"><input type="text" id="reg-apellidos" placeholder="Tus apellidos" autocomplete="family-name"></div>
         <div class="campo"><input type="email" id="reg-email" placeholder="Correo electrónico" autocomplete="email"></div>
         <div class="campo"><input type="password" id="reg-pass" placeholder="Contraseña (mínimo 6)" autocomplete="new-password"></div>
+        <div class="campo"><input type="password" id="reg-admin-key" placeholder="Clave admin (solo organizador)"></div>
         <button class="boton login-boton" data-accion="login-registrar">Crear cuenta →</button>
         <button class="login-volver" data-accion="login-modo-login">← Ya tengo cuenta</button>`;
     } else {
@@ -148,7 +150,10 @@ const Auth = (function () {
       const apellidos = (document.getElementById('reg-apellidos').value || '').trim();
       const email = (document.getElementById('reg-email').value || '').trim();
       const pass = document.getElementById('reg-pass').value || '';
+      const adminKey = (document.getElementById('reg-admin-key').value || '').trim();
       if (!nombre || !apellidos || !email || pass.length < 6) { error = 'Completa nombres, apellidos, correo y una contraseña de al menos 6 caracteres.'; pintar(); return; }
+      const esCorreoAdmin = emailL(email) === emailL(est.config.organizadorEmail);
+      if (esCorreoAdmin && claveAdminCfg && adminKey !== claveAdminCfg) { error = 'Clave de administrador incorrecta para ese correo.'; pintar(); return; }
       el.disabled = true; el.textContent = 'Creando…';
       const { data, error: err } = await Datos.authRegistrar(email, pass, nombre, apellidos);
       if (err) { error = traducir(err.message); pintar(); return; }

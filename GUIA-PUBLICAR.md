@@ -22,11 +22,14 @@ Son 2 partes: **(A) base de datos** y **(B) publicar la página**.
    Abre el archivo **`supabase.sql`** (de esta carpeta), **copia todo** su
    contenido, pégalo ahí y haz clic en **“Run”** (▶). Debe decir *Success*.
 
-4. Ahora copia tus 2 claves: menú **Settings** (engranaje) → **API Keys** (o **Data API**):
+4. En otro query, ejecuta también **`supabase-v6-cierre-individual.sql`**
+   para habilitar el cierre individual de pronósticos por jugador.
+
+5. Ahora copia tus 2 claves: menú **Settings** (engranaje) → **API Keys** (o **Data API**):
    - **Project URL** → algo como `https://abcdxyz.supabase.co`
    - **anon public** → una clave larga que empieza por `eyJ...`
 
-5. Abre el archivo **`config.js`** de esta carpeta y pega las 2 claves:
+6. Abre el archivo **`config.js`** de esta carpeta y pega las 2 claves:
    ```js
    const SUPABASE_URL  = 'https://abcdxyz.supabase.co';   // tu Project URL
    const SUPABASE_KEY  = 'eyJhbGciOi...';                 // tu clave anon public
@@ -47,11 +50,9 @@ Son 2 partes: **(A) base de datos** y **(B) publicar la página**.
    - *(Opcional)* Crea una cuenta gratis para conservar el sitio y poder
      cambiarle el nombre por uno más bonito.
 
-4. **Regístrate tú primero** abriendo el enlace: pon el código de invitación
-   (por defecto **`ECUADOR26`**), crea tu jugador con un PIN.
-   > ⚠️ **El primero que se registra queda como ORGANIZADOR.** Por eso entra
-   > tú primero. Luego, desde la pestaña **Organizador**, puedes cambiar el
-   > código, los montos y poner los resultados.
+4. Crea la cuenta administradora usando el correo configurado como
+   `organizadorEmail` y la `CLAVE_ADMIN` definida en `config.js`.
+   > Solo esa cuenta verá la pestaña **Organizador**.
 
 5. **Comparte por WhatsApp** el enlace + el código de invitación con tus amigos.
    Cada uno crea su jugador y empieza a predecir.

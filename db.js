@@ -26,9 +26,11 @@ const Datos = (function () {
   function generarSemilla() {
     const predicciones = {};
     const apuestas = {};
+    const cierres = {};
     JUGADORES_SEMILLA.forEach((j, ji) => {
       predicciones[j.id] = { partidos: {}, campeon: null, subcampeon: null };
       apuestas[j.id] = {};
+      cierres[j.id] = false;
       PARTIDOS_SEMILLA.forEach((p, pi) => {
         predicciones[j.id].partidos[p.id] = ['L', 'E', 'V'][(ji * 2 + pi) % 3]; // pronóstico demo 1X2
       });
@@ -41,6 +43,7 @@ const Datos = (function () {
       partidos:      JSON.parse(JSON.stringify(PARTIDOS_SEMILLA)),
       predicciones:  predicciones,
       apuestas:      apuestas,
+      cierres:       cierres,
       resultadoFinal:{ campeon: null, subcampeon: null },
     };
   }
@@ -52,6 +55,7 @@ const Datos = (function () {
     est.partidos       = datos.partidos;
     est.predicciones   = datos.predicciones;
     est.apuestas       = datos.apuestas || {};
+    est.cierres        = datos.cierres || {};
     est.resultadoFinal = datos.resultadoFinal;
     est.bloqueados     = datos.bloqueados || [];
   }
@@ -70,7 +74,7 @@ const Datos = (function () {
   function guardarLocal() {
     localStorage.setItem(CLAVE_LOCAL, JSON.stringify({
       config: est.config, jugadores: est.jugadores, partidos: est.partidos,
-      predicciones: est.predicciones, apuestas: est.apuestas, resultadoFinal: est.resultadoFinal,
+      predicciones: est.predicciones, apuestas: est.apuestas, cierres: est.cierres, resultadoFinal: est.resultadoFinal,
     }));
   }
 
@@ -121,6 +125,7 @@ const Datos = (function () {
     const { data: apRows } = await sb.from('apuestas').select('*');
     const predicciones = {};
     const apuestas = {};
+    const cierres = {};
     jugadores.forEach(j => { predicciones[j.id] = { partidos: {}, campeon: null, subcampeon: null }; apuestas[j.id] = {}; });
     (predRows || []).forEach(r => {
       if (!predicciones[r.jugador_id]) predicciones[r.jugador_id] = { partidos: {}, campeon: null, subcampeon: null };
@@ -136,7 +141,14 @@ const Datos = (function () {
       apuestas[r.jugador_id][r.partido_id] = { pago: !!r.pago };
     });
 
-    aplicar({ config, jugadores, partidos, predicciones, apuestas, resultadoFinal, bloqueados });
+    try {
+      const { data: cierRows } = await sb.from('cierres_pronosticos').select('*');
+      (cierRows || []).forEach(r => { cierres[r.jugador_id] = !!r.cerrado; });
+    } catch (e) {
+      // Si la tabla aún no existe, seguimos con cierre en memoria.
+    }
+
+    aplicar({ config, jugadores, partidos, predicciones, apuestas, cierres, resultadoFinal, bloqueados });
   }
 
   /* ---------- Suscripción a cambios en tiempo real ---------- */
@@ -153,6 +165,7 @@ const Datos = (function () {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'picks_final' }, recargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores' }, recargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'apuestas' }, recargar)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'cierres_pronosticos' }, recargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'config' }, recargar)
       .subscribe();
   }
@@ -167,6 +180,7 @@ const Datos = (function () {
       est = estado;
       onCambio = callbackCambio || (() => {});
       if (!est.apuestas) est.apuestas = {};
+      if (!est.cierres) est.cierres = {};
       if (!MODO_ONLINE) { cargarLocal(); return est; }
       if (!sb) { console.error('Falta la librería de Supabase'); cargarLocal(); return est; }
       try { await cargarOnline(); suscribir(); }
@@ -176,28 +190,29 @@ const Datos = (function () {
 
     nuevoId: uid,
 
-    // Crea un jugador. El primero en registrarse queda como organizador.
+    // Crea un jugador. El organizador se identifica por su correo configurado.
     async crearJugador(jugador) {
       const emailExistente = emailL(jugador.email);
+      const emailOrg = emailL((est.config && est.config.organizadorEmail) || '');
       if (emailExistente) {
         const yaExiste = est.jugadores.find(j => emailL(j.email) === emailExistente);
         if (yaExiste) {
           if (jugador.nombre && yaExiste.nombre !== jugador.nombre) yaExiste.nombre = jugador.nombre;
           if (jugador.color && yaExiste.color !== jugador.color) yaExiste.color = jugador.color;
+          if (emailOrg && emailExistente === emailOrg && !yaExiste.esOrganizador) yaExiste.esOrganizador = true;
           if (!MODO_ONLINE) guardarLocal();
           else await sb.from('jugadores').update(aFilaJugador(yaExiste)).eq('id', yaExiste.id);
           return yaExiste;
         }
       }
-      const esPrimero = est.jugadores.length === 0;
-      const emailOrg = ((est.config && est.config.organizadorEmail) || '').toLowerCase();
-      const esOrgEmail = !!emailOrg && (jugador.email || '').toLowerCase() === emailOrg;
-      const nuevo = { abonado: 0, ...jugador, esOrganizador: jugador.esOrganizador || esPrimero || esOrgEmail };
+      const esOrgEmail = !!emailOrg && emailExistente === emailOrg;
+      const nuevo = { abonado: 0, ...jugador, esOrganizador: !!(jugador.esOrganizador || esOrgEmail) };
       if (!MODO_ONLINE) {
         nuevo.id = nuevo.id || uid();
         est.jugadores.push(nuevo);
         est.predicciones[nuevo.id] = { partidos: {}, campeon: null, subcampeon: null };
         est.apuestas[nuevo.id] = {};
+        est.cierres[nuevo.id] = false;
         guardarLocal();
         return nuevo;
       }
@@ -208,6 +223,7 @@ const Datos = (function () {
       est.jugadores.push(creado);
       est.predicciones[creado.id] = { partidos: {}, campeon: null, subcampeon: null };
       est.apuestas[creado.id] = {};
+      est.cierres[creado.id] = false;
       return creado;
     },
 
@@ -223,11 +239,24 @@ const Datos = (function () {
       est.jugadores = est.jugadores.filter(x => x.id !== id);
       delete est.predicciones[id];
       delete est.apuestas[id];
+      delete est.cierres[id];
       if (j && j.email) est.bloqueados = (est.bloqueados || []).concat((j.email || '').toLowerCase());
       if (!MODO_ONLINE) return guardarLocal();   // local: basta con sacarlo de la lista
       // Online: lo marcamos como bloqueado (no se borra la cuenta) y quitamos sus pronósticos
       await sb.from('predicciones').delete().eq('jugador_id', id);
+      await sb.from('cierres_pronosticos').delete().eq('jugador_id', id).then(() => {}).catch(() => {});
       await sb.from('jugadores').update({ bloqueado: true }).eq('id', id);
+    },
+
+    estaCerrado(jugadorId) {
+      return !!(est.cierres && est.cierres[jugadorId]);
+    },
+
+    async cerrarPronosticosJugador(jugadorId) {
+      if (!est.cierres) est.cierres = {};
+      est.cierres[jugadorId] = true;
+      if (!MODO_ONLINE) return guardarLocal();
+      await sb.from('cierres_pronosticos').upsert({ jugador_id: jugadorId, cerrado: true, cerrado_en: new Date().toISOString() });
     },
 
     async guardarPrediccion(jugadorId, partidoId) {
@@ -322,12 +351,14 @@ const Datos = (function () {
       est.jugadores = [];
       est.predicciones = {};
       est.apuestas = {};
+      est.cierres = {};
       est.bloqueados = [];
       if (!MODO_ONLINE) { guardarLocal(); return 0; }
       if (ids.length) {
         await sb.from('predicciones').delete().in('jugador_id', ids);
         await sb.from('picks_final').delete().in('jugador_id', ids);
         await sb.from('apuestas').delete().in('jugador_id', ids);
+        await sb.from('cierres_pronosticos').delete().in('jugador_id', ids).then(() => {}).catch(() => {});
         await sb.from('jugadores').delete().in('id', ids);
       }
       return ids.length;
@@ -350,11 +381,12 @@ const Datos = (function () {
       if (!eliminar.length) return 0;
       const idsEliminar = eliminar.map(j => j.id);
       est.jugadores = mantener;
-      idsEliminar.forEach(id => { delete est.predicciones[id]; delete est.apuestas[id]; });
+      idsEliminar.forEach(id => { delete est.predicciones[id]; delete est.apuestas[id]; delete est.cierres[id]; });
       if (!MODO_ONLINE) { guardarLocal(); return idsEliminar.length; }
       await sb.from('predicciones').delete().in('jugador_id', idsEliminar);
       await sb.from('picks_final').delete().in('jugador_id', idsEliminar);
       await sb.from('apuestas').delete().in('jugador_id', idsEliminar);
+      await sb.from('cierres_pronosticos').delete().in('jugador_id', idsEliminar).then(() => {}).catch(() => {});
       await sb.from('jugadores').delete().in('id', idsEliminar);
       return idsEliminar.length;
     },

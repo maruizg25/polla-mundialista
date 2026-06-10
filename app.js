@@ -13,6 +13,7 @@ let estado = {
   jugadores: [],
   partidos: [],
   predicciones: {},   // predicciones[jugadorId].partidos[partidoId] = 'L' | 'E' | 'V'
+  cierres: {},        // cierres[jugadorId] = true cuando congela su papeleta
   bloqueados: [],     // correos de jugadores quitados (no pueden volver a entrar)
   resultadoFinal: { campeon: null, subcampeon: null },
   espn: { loading: false, error: null, eventos: [], lastFetch: 0 },
@@ -49,7 +50,12 @@ function esKnockout(p) { return (p.fase || 'grupos') !== 'grupos'; }
 function getJugador(id) { return estado.jugadores.find(j => j.id === id); }
 function getEquipo(id)  { return EQUIPOS[id] || { nombre: '¿?', bandera: '🏳️' }; }
 function usuario()      { return getJugador(estado.usuarioActual); }
-function esOrganizador(){ const u = usuario(); return !!(u && u.esOrganizador); }
+function emailL(e) { return String(e || '').toLowerCase().trim(); }
+function esAdminCorreo(j) {
+  const emailOrg = emailL((estado.config && estado.config.organizadorEmail) || '');
+  return !!(j && emailOrg && emailL(j.email) === emailOrg);
+}
+function esOrganizador(){ const u = usuario(); return esAdminCorreo(u); }
 function nombreEquipo(id) { return getEquipo(id).nombre; }
 function chipEquipo(id) { const e = getEquipo(id); return `${e.bandera} ${e.nombre}`; }
 // Texto de un resultado L/E/V para un partido dado.
@@ -78,7 +84,7 @@ function diaKey(d) { return new Intl.DateTimeFormat('en-CA', { year: 'numeric', 
 function diaLargo(d) { const s = new Intl.DateTimeFormat('es-EC', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ_EC }).format(d); return s.charAt(0).toUpperCase() + s.slice(1); }
 function partidoBloqueado(p) {
   if (p.jugado) return true;
-  if (estado.config.pronosticosCerrados) return true;
+  if (estado.usuarioActual && Datos.estaCerrado && Datos.estaCerrado(estado.usuarioActual)) return true;
   if (!faseAbierta(p.fase || 'grupos')) return true;   // fase cerrada: no se pronostica
   const inicio = fechaEc(p.fecha);
   return !isNaN(inicio) && inicio.getTime() <= Date.now();
@@ -92,6 +98,20 @@ function edicionCerrada() {
   return !!(primero && primero.getTime() <= Date.now());
 }
 function puedeEditarJugadores() { return !edicionCerrada(); }
+function partidosIniciales() { return estado.partidos.filter(p => (p.fase || 'grupos') === 'grupos'); }
+function totalIniciales() { return partidosIniciales().length; }
+function completosIniciales(jugadorId) {
+  const pr = (estado.predicciones[jugadorId] || {}).partidos || {};
+  const total = totalIniciales();
+  if (!total) return false;
+  return partidosIniciales().every(p => !!pr[p.id]);
+}
+function puedeCerrarPronosticos(jugadorId) {
+  if (!jugadorId) return false;
+  if (Datos.estaCerrado && Datos.estaCerrado(jugadorId)) return false;
+  if (edicionCerrada()) return false;
+  return completosIniciales(jugadorId);
+}
 function escapar(t) {
   return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -406,7 +426,7 @@ function respaldoPredicciones(jugadorId) {
   return {
     jugador: j ? { id: j.id, nombre: j.nombre, email: j.email || null } : null,
     generadoEn: new Date().toISOString(),
-    pronosticosCerrados: !!estado.config.pronosticosCerrados,
+    pronosticosCerrados: !!(j && Datos.estaCerrado && Datos.estaCerrado(j.id)),
     partidos,
     campeon: pr.campeon || null,
     subcampeon: pr.subcampeon || null,
@@ -442,6 +462,10 @@ function vistaResumen() {
   const abiertas = estado.partidos.filter(p => !partidoBloqueado(p));
   const pronosticados = estado.partidos.filter(p => pr.partidos[p.id]);
   const porcentaje = estado.partidos.length ? Math.round(pronosticados.length / estado.partidos.length * 100) : 0;
+  const total72 = totalIniciales();
+  const listos72 = partidosIniciales().filter(p => pr.partidos[p.id]).length;
+  const cerradoYo = Datos.estaCerrado && Datos.estaCerrado(yo.id);
+  const cerrarHabilitado = puedeCerrarPronosticos(yo.id);
   const grupos = {};
   estado.partidos.forEach(p => { (grupos[p.fase || 'grupos'] = grupos[p.fase || 'grupos'] || []).push(p); });
   const fases = fasesCfg().map(f => f.id).concat(Object.keys(grupos).filter(f => !fasesCfg().find(x => x.id === f)));
@@ -450,18 +474,23 @@ function vistaResumen() {
     <div class="subtitulo-vista">Revisa tus elecciones y descarga un respaldo antes de cerrar tu papeleta.</div>
     <div class="resumen">
       <div class="stat azul"><div class="ico-fondo">📝</div><div class="etq">Pronosticados</div><div class="val">${pronosticados.length}</div></div>
+      <div class="stat"><div class="ico-fondo">72</div><div class="etq">Fase de grupos</div><div class="val">${listos72}/${total72 || 72}</div></div>
       <div class="stat dorada"><div class="ico-fondo">📦</div><div class="etq">Respaldo</div><div class="val">${porcentaje}%</div></div>
-      <div class="stat roja"><div class="ico-fondo">🔒</div><div class="etq">Estado</div><div class="val">${estado.config.pronosticosCerrados ? 'Cerrado' : 'Abierto'}</div></div>
+      <div class="stat roja"><div class="ico-fondo">🔒</div><div class="etq">Mi papeleta</div><div class="val">${cerradoYo ? 'Cerrada' : 'Abierta'}</div></div>
     </div>`;
 
-  if (estado.config.pronosticosCerrados) {
+  if (cerradoYo) {
     html += `<div class="aviso demo"><span class="ico">🏁</span><div>Tu papeleta ya quedó congelada. No podrás modificarla y este resumen queda como respaldo.</div></div>`;
+  } else if (!edicionCerrada() && !completosIniciales(yo.id)) {
+    html += `<div class="aviso info"><span class="ico">🧩</span><div>Para cerrar tu papeleta debes completar los 72 partidos de fase de grupos antes del primer partido.</div></div>`;
+  } else if (edicionCerrada()) {
+    html += `<div class="aviso info"><span class="ico">⏰</span><div>El primer partido ya inició. Si no cerraste antes, la papeleta queda sin bloqueo manual.</div></div>`;
   } else if (abiertas.length === 0) {
     html += `<div class="aviso info"><span class="ico">⏳</span><div>Ya no tienes partidos abiertos. Puedes cerrar tus pronósticos desde el panel del organizador cuando toque.</div></div>`;
   }
 
   html += `<div class="tarjeta"><div class="tarjeta-titulo">Acciones</div>
-    <div class="boton-fila"><button class="boton" data-accion="respaldo-descargar">⬇️ Descargar respaldo</button><button class="boton secundario" data-accion="respaldo-copiar">📋 Copiar respaldo</button>${!estado.config.pronosticosCerrados ? '<button class="boton dorado" data-accion="ir" data-vista="partidos">Volver a editar</button>' : ''}</div>
+    <div class="boton-fila"><button class="boton" data-accion="respaldo-descargar">⬇️ Descargar respaldo</button><button class="boton secundario" data-accion="respaldo-copiar">📋 Copiar respaldo</button>${!cerradoYo ? '<button class="boton dorado" data-accion="ir" data-vista="partidos">Volver a editar</button>' : ''}${cerrarHabilitado ? '<button class="boton roja" data-accion="cerrar-mis-pronosticos">🔒 Cerrar mis pronósticos</button>' : ''}</div>
   </div>`;
 
   fases.forEach(faseId => {
@@ -528,6 +557,10 @@ function vistaPartidos() {
       <div class="progreso-barra"><div class="progreso-fill" style="width:${pct}%"></div></div>
     </div>
     <div class="fases-nav">${fchips}</div>`;
+
+  if (Datos.estaCerrado && Datos.estaCerrado(yo.id)) {
+    html += `<div class="aviso demo"><span class="ico">🔒</span><div>Tu papeleta está cerrada. Ya no puedes cambiar tus pronósticos.</div></div>`;
+  }
 
     if (pct === 100) {
       html += `<div class="aviso demo"><span class="ico">🏁</span><div>Ya completaste tus 72 pronósticos. Puedes pasar al resumen y guardar un respaldo.</div></div>`;
@@ -679,19 +712,27 @@ function vistaAdmin() {
   }
   const fasesCard = `<div class="tarjeta"><div class="tarjeta-titulo">🥇 Fases del concurso</div><p class="texto-mini" style="margin-bottom:10px">Abre cada fase cuando corresponda. Mientras esté cerrada, nadie puede pronosticar esos partidos.</p>${fases.map(ff => `<div class="fase-fila"><div><strong>${escapar(ff.nombre)}</strong> <span class="texto-mini">· ${partidosDeFase(ff.id).length} partidos · premio ${formatMoneda(premioFase(ff.id))}</span></div><div class="fase-acc"><label class="texto-mini">$<input type="number" min="0" step="0.5" value="${ff.monto}" data-accion="fase-monto" data-f="${ff.id}" style="width:54px"></label><button class="boton ${ff.abierta ? 'secundario' : 'dorado'} pequeno" data-accion="fase-toggle" data-f="${ff.id}">${ff.abierta ? '🔓 Abierta' : '🔒 Cerrada'}</button></div></div>`).join('')}</div>`;
   const addCard = `<div class="tarjeta"><div class="tarjeta-titulo">➕ Agregar partido (eliminatoria / final)</div><p class="texto-mini" style="margin-bottom:10px">Cuando se definan los equipos, agrégalos aquí. Se predice quién avanza.</p><div class="fila-campos"><div class="campo"><label>Fase</label><select id="add-fase"><option value="eliminatorias">Eliminatorias</option><option value="final">Final</option></select></div><div class="campo"><label>Ronda</label><input type="text" id="add-ronda" placeholder="Octavos, Cuartos, Semifinal…"></div></div><div class="fila-campos"><div class="campo"><label>Local</label><select id="add-local">${opts('')}</select></div><div class="campo"><label>Visitante</label><select id="add-visita">${opts('')}</select></div></div><div class="campo"><label>Fecha y hora (Ecuador)</label><input type="datetime-local" id="add-fecha"></div><button class="boton" data-accion="agregar-partido">➕ Agregar partido</button></div>`;
+  const total72 = totalIniciales() || 72;
+  const pronCard = `<div class="tarjeta"><div class="tarjeta-titulo">👀 Pronósticos de todos los jugadores</div>
+    <p class="texto-mini" style="margin-bottom:10px">Aquí ves el avance y si cada jugador ya cerró su papeleta.</p>
+    ${estado.jugadores.map(j => {
+      const pr = (estado.predicciones[j.id] || {}).partidos || {};
+      const listos = partidosIniciales().filter(p => !!pr[p.id]).length;
+      const cerrado = Datos.estaCerrado && Datos.estaCerrado(j.id);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--linea)"><div><strong>${escapar(j.nombre)}</strong><div class="texto-mini">${listos}/${total72} partidos de grupos pronosticados</div></div><span class="chip ${cerrado ? 'live' : 'grupo'}">${cerrado ? 'Cerrado' : 'Abierto'}</span></div>`;
+    }).join('')}
+  </div>`;
 
   return `<div class="titulo-vista">Panel del organizador 🛠️</div>
     <div class="subtitulo-vista">Abre las fases y marca resultados oficiales.</div>
     ${edicionBloqueada ? '<div class="aviso info"><span class="ico">🔒</span><div>La edición de jugadores quedó cerrada porque ya inició el primer partido.</div></div>' : ''}
     ${fasesCard}
     <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados</div><p class="texto-mini" style="margin-bottom:10px">Toca la bandera del <strong>${faseSel === 'grupos' ? 'ganador (o 🤝 empate)' : 'que avanza'}</strong>. Los puntos se calculan al instante.</p><div class="fases-nav">${fchipsR}</div>${resBody}<div class="boton-fila mt8"><button class="boton dorado pequeno" data-accion="demo-resultados">Resultados de ejemplo</button> <button class="boton secundario pequeno" data-accion="borrar-resultados">Borrar resultados</button></div></div>
+    ${pronCard}
     ${addCard}
     <div class="tarjeta"><div class="tarjeta-titulo">🔄 Fixture oficial</div>
       <p class="texto-mini">Recarga los 72 partidos oficiales del Mundial 2026. No borra los pronósticos.</p>
       <div class="mt8"><button class="boton secundario" data-accion="re-sembrar">🔄 Re-cargar fixture oficial</button></div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">🔒 Cierre de pronósticos</div>
-      <p class="texto-mini">Cuando ya estén listos los 72 pronósticos, congela la papeleta para que nadie pueda modificarla.</p>
-      <div class="mt8"><button class="boton ${cfg.pronosticosCerrados ? 'secundario' : 'dorado'}" data-accion="toggle-cierre-pronosticos">${cfg.pronosticosCerrados ? '🔓 Reabrir pronósticos' : '🔒 Cerrar pronósticos'}</button></div></div>
     <div class="tarjeta"><div class="tarjeta-titulo">⚙️ Configuración</div>
       <div class="campo"><label>Nombre de la polla</label><input type="text" value="${escapar(cfg.nombrePolla)}" data-accion="cfg" data-campo="nombrePolla"></div>
       <div class="fila-campos"><div class="campo"><label>Código de invitación</label><input type="text" value="${escapar(cfg.codigoInvitacion)}" data-accion="cfg" data-campo="codigoInvitacion"></div>
@@ -793,7 +834,8 @@ const TABS = [
   { id: 'bote', ico: '💰', txt: 'Premio' }, { id: 'admin', ico: '🛠️', txt: 'Organizador', m: 'Admin' },
 ];
 
-function render() {
+function render(opts) {
+  const keepScroll = !!(opts && opts.keepScroll);
   const yo = usuario();
   if (!yo) { Auth.salir(); return; }
 
@@ -818,7 +860,7 @@ function render() {
     if (!liveInterval) liveInterval = setInterval(() => { if (estado.vista === 'en-vivo') cargarESPNEnVivo(); }, 30000);
   }
   if (!espnBgInterval) espnBgInterval = setInterval(() => { if (estado.usuarioActual) cargarESPNEnVivo(); }, 300000);
-  window.scrollTo({ top: 0 });
+  if (!keepScroll) window.scrollTo({ top: 0 });
 }
 
 /* ----------------------------------------------------------------
@@ -839,10 +881,11 @@ document.addEventListener('click', (e) => {
     case 'salir': Auth.salir(); break;
     case 'respaldo-descargar': descargarRespaldoPredicciones(); break;
     case 'respaldo-copiar': copiarRespaldoPredicciones().catch(err => console.warn(err)); break;
-    case 'toggle-cierre-pronosticos': {
-      if (!esOrganizador()) return;
-      estado.config.pronosticosCerrados = !estado.config.pronosticosCerrados;
-      sync(Datos.guardarConfig());
+    case 'cerrar-mis-pronosticos': {
+      const id = estado.usuarioActual;
+      if (!puedeCerrarPronosticos(id)) { toast('Completa los 72 partidos de grupos antes de cerrar.', ''); return; }
+      if (!confirm('¿Seguro? Al cerrar tu papeleta ya no podrás editar pronósticos.')) return;
+      sync(Datos.cerrarPronosticosJugador(id));
       render();
       break;
     }
@@ -858,7 +901,7 @@ document.addEventListener('click', (e) => {
       sync(Datos.guardarPrediccion(estado.usuarioActual, p.id));
       const desp = progresoPredicciones();
       const completoAhora = desp.total > 0 && desp.hechos === desp.total && antes.hechos < antes.total;
-      render();
+      render({ keepScroll: true });
       if (completoAhora) festejo();
       else if (eraNuevo) chispitas(rect);
       break;
@@ -868,7 +911,7 @@ document.addEventListener('click', (e) => {
       if (!p || partidoBloqueado(p)) return;
       const pr = estado.predicciones[estado.usuarioActual];
       if (pr) { pr.partidos[p.id] = null; sync(Datos.guardarPrediccion(estado.usuarioActual, p.id)); }
-      render(); break;
+      render({ keepScroll: true }); break;
     }
     case 'res': {   // el organizador marca el resultado
       if (!esOrganizador()) return;

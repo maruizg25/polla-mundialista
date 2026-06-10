@@ -11,6 +11,8 @@
 
 const SUPABASE_URL  = 'https://mvauujppcrdxfvmsimqt.supabase.co';
 const SUPABASE_KEY  = 'sb_publishable_tCClRjUeo1PK_A6XXABZ5g_FUWRs4BF';
+// Clave de alta para la cuenta administradora (solo frontend).
+const CLAVE_ADMIN   = 'ADMIN-2026';
 
 /* --- No necesitas tocar nada de aquí para abajo --- */
 const MODO_ONLINE = Boolean(SUPABASE_URL && SUPABASE_KEY);
