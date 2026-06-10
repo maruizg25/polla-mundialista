@@ -306,7 +306,7 @@ function estadoEspn(ev) {
   const tipo = ev?.status?.type || {};
   if (tipo.state === 'in') return ev?.status?.displayClock ? `En vivo · ${ev.status.displayClock}` : 'En vivo';
   if (tipo.state === 'post') return 'Finalizado';
-  return tipo.detail || 'Programado';
+  return 'Programado';
 }
 
 function detalleEspn(ev) {
@@ -321,10 +321,6 @@ function detalleEspn(ev) {
     timeZone: TZ_EC,
   }).format(d);
   return txt.charAt(0).toUpperCase() + txt.slice(1) + ' · Quito, Ecuador';
-}
-
-function enlaceEspn(ev) {
-  return ev?.links?.find(l => (l.rel || []).includes('desktop'))?.href || ev?.links?.[0]?.href || ESPN_SCOREBOARD_URL;
 }
 
 function resumenEspn(ev) {
@@ -342,7 +338,6 @@ function resumenEspn(ev) {
         <div class="live-team visita"><span>${escapar(String(away.score ?? '0'))}</span><strong>${escapar(awayName)}</strong></div>
       </div>
       <div class="live-meta">${escapar(ev?.competitions?.[0]?.venue?.fullName || 'Sin estadio')}${ev?.shortName ? ` · ${escapar(ev.shortName)}` : ''}</div>
-      <div class="mt8"><a class="boton secundario pequeno" href="${escapar(enlaceEspn(ev))}" target="_blank" rel="noreferrer">Abrir en ESPN</a></div>
     </div>`;
 }
 
@@ -374,7 +369,7 @@ function vistaEnVivo() {
   const proximoLocal = estado.partidos.slice().sort((a, b) => fechaEc(a.fecha) - fechaEc(b.fecha)).find(p => !partidoBloqueado(p));
 
   let html = `<div class="titulo-vista">En vivo 📺</div>
-    <div class="subtitulo-vista">Seguimiento en tiempo real desde ESPN: marcador, estado y enlace al partido.</div>`;
+    <div class="subtitulo-vista">Seguimiento en tiempo real desde ESPN: marcador y estado del partido. Se actualiza automáticamente cada 15 segundos.</div>`;
 
   if (estado.espn.loading && !eventos.length) {
     html += `<div class="tarjeta"><p class="texto-mini centro" style="padding:18px">Cargando marcador de ESPN...</p></div>`;
@@ -857,9 +852,9 @@ function render(opts) {
   }
   if (estado.vista === 'en-vivo') {
     if (!estado.espn.lastFetch && !estado.espn.loading) cargarESPNEnVivo();
-    if (!liveInterval) liveInterval = setInterval(() => { if (estado.vista === 'en-vivo') cargarESPNEnVivo(); }, 30000);
+    if (!liveInterval) liveInterval = setInterval(() => { if (estado.vista === 'en-vivo') cargarESPNEnVivo(); }, 15000);
   }
-  if (!espnBgInterval) espnBgInterval = setInterval(() => { if (estado.usuarioActual) cargarESPNEnVivo(); }, 300000);
+  if (!espnBgInterval) espnBgInterval = setInterval(() => { if (estado.usuarioActual) cargarESPNEnVivo(); }, 60000);
   if (!keepScroll) window.scrollTo({ top: 0 });
 }
 
