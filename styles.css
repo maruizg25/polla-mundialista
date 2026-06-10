@@ -331,6 +331,9 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
 .login-nuevo .campo { margin: 0 0 10px; }
 .login-nuevo .boton { width: 100%; }
 .login-volver { background: none; border: none; color: var(--azul); margin-top: 16px; cursor: pointer; font-weight: 700; font-family: inherit; font-size: .88rem; }
+.login-acciones { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.login-link { background: none; border: none; color: var(--azul); cursor: pointer; font-weight: 700; font-family: inherit; font-size: .84rem; text-decoration: underline; padding: 4px; }
+.login-ok { background: #dcfce7; color: #15803d; border: 1px solid #86efac; border-radius: 10px; padding: 10px 12px; font-size: .85rem; margin-bottom: 12px; font-weight: 600; }
 
 @media (max-width: 480px) {
   .fila-campos { grid-template-columns: 1fr; }

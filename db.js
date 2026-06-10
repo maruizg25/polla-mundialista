@@ -76,8 +76,8 @@ const Datos = (function () {
      MOTOR ONLINE (Supabase)
      ============================================================ */
   const montoCuota = () => (est && est.config ? est.config.montoApuesta : 0);
-  const aFilaJugador = j => ({ id: j.id, nombre: j.nombre, color: j.color, abonado: j.abonado || 0, pago: (j.abonado || 0) >= montoCuota(), es_organizador: !!j.esOrganizador, pin: j.pin || '' });
-  const deFilaJugador = r => ({ id: r.id, nombre: r.nombre, color: r.color, abonado: r.abonado || 0, esOrganizador: !!r.es_organizador, pin: r.pin || '' });
+  const aFilaJugador = j => ({ id: j.id, nombre: j.nombre, color: j.color, email: j.email || null, abonado: j.abonado || 0, pago: (j.abonado || 0) >= montoCuota(), es_organizador: !!j.esOrganizador, pin: j.pin || '' });
+  const deFilaJugador = r => ({ id: r.id, nombre: r.nombre, color: r.color, email: r.email || null, abonado: r.abonado || 0, esOrganizador: !!r.es_organizador, pin: r.pin || '' });
   const aFilaPartido = p => ({ id: p.id, orden: p.orden, grupo: p.grupo, fase: p.fase, ronda: p.ronda || null, local: p.local, visita: p.visita, fecha: p.fecha, estadio: p.estadio, jugado: !!p.jugado, resultado: p.resultado || null, goles_local: p.golesLocal, goles_visita: p.golesVisita });
   const deFilaPartido = r => ({ id: r.id, orden: r.orden, grupo: r.grupo, fase: r.fase, ronda: r.ronda || null, local: r.local, visita: r.visita, fecha: r.fecha, estadio: r.estadio, jugado: !!r.jugado, resultado: r.resultado || null, golesLocal: r.goles_local, golesVisita: r.goles_visita });
 
@@ -266,6 +266,15 @@ const Datos = (function () {
       if (!MODO_ONLINE) return guardarLocal();
       await sb.from('apuestas').delete().eq('jugador_id', jugadorId).eq('partido_id', partidoId);
     },
+
+    /* ---- AUTENTICACIÓN (Supabase Auth: correo + contraseña) ---- */
+    async authSesion() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
+    async authLogin(email, password) { return await sb.auth.signInWithPassword({ email, password }); },
+    async authRegistrar(email, password, nombre) { return await sb.auth.signUp({ email, password, options: { data: { nombre } } }); },
+    async authReset(email) { return await sb.auth.resetPasswordForEmail(email); },
+    async authSalir() { if (sb) await sb.auth.signOut(); },
+    onAuth(cb) { if (sb) sb.auth.onAuthStateChange((_evt, session) => cb(session)); },
+    jugadorPorEmail(email) { const e = (email || '').toLowerCase(); return est.jugadores.find(j => (j.email || '').toLowerCase() === e); },
 
     // Solo modo local: borra todo y vuelve a la semilla.
     reiniciarLocal() {

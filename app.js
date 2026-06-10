@@ -369,7 +369,7 @@ function vistaAdmin() {
         <span class="nombre">${escapar(j.nombre)} ${j.esOrganizador ? '<span class="chip grupo">organizador</span>' : ''}</span>
         ${!j.esOrganizador ? `<button class="boton secundario pequeno" data-accion="hacer-org" data-jug="${j.id}">Hacer organizador</button>` : ''}
         ${j.id !== estado.usuarioActual ? `<button class="boton peligro pequeno" data-accion="quitar-jug" data-jug="${j.id}">Quitar</button>` : ''}</li>`).join('')}</ul>
-      <div class="boton-fila mt8"><input type="text" id="nuevo-jugador" placeholder="Nombre del nuevo jugador" class="campo" style="margin:0;flex:1;min-width:160px"><button class="boton" data-accion="agregar-jug">＋ Agregar</button></div></div>
+      <p class="texto-mini mt8">Los jugadores se registran solos con su correo y contraseña. Aquí puedes hacerlos organizador o quitarlos.</p></div>
     ${!Datos.online ? `<div class="tarjeta"><div class="tarjeta-titulo">⚠️ Zona de peligro</div><p class="texto-mini">Borra todos los datos de este equipo y vuelve a los de ejemplo.</p><div class="mt8"><button class="boton peligro" data-accion="reiniciar">Reiniciar todo</button></div></div>` : ''}`;
 }
 

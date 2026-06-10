@@ -8,5 +8,6 @@ Thumbs.db
 # Logs y temporales
 *.log
 
-# Página de prueba local (no se publica)
+# Páginas de prueba (no se publican)
 test-local.html
+test-online.html

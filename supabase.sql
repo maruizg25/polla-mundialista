@@ -24,6 +24,7 @@ create table if not exists config (
 create table if not exists jugadores (
   id             uuid primary key default gen_random_uuid(),
   nombre         text not null,
+  email          text,
   color          text,
   pago           boolean default false,
   abonado        int default 0,

@@ -1,59 +1,34 @@
 /* ============================================================
-   AUTENTICACIÓN SENCILLA (Auth)
+   AUTENTICACIÓN (Auth) — correo + contraseña con Supabase Auth
    ------------------------------------------------------------
-   Pensada para un grupo privado de amigos:
-     1) Entrar con el CÓDIGO DE INVITACIÓN del grupo.
-     2) Elegir tu jugador (o crear uno nuevo).
-     3) Un PIN personal opcional evita que otro edite tus
-        predicciones.
-   No usa correo ni contraseñas complicadas. Es seguridad
-   "casual" para jugar entre conocidos.
+   • Cualquiera se registra con su correo y una contraseña.
+   • No hace falta código de invitación.
+   • Quien se registra queda en la base de datos como jugador.
+   • El PRIMERO en registrarse queda como organizador.
+   • Incluye "olvidé mi contraseña".
+   (En modo local de prueba entra directo, sin login.)
    ============================================================ */
 
 const Auth = (function () {
-  const CLAVE_SESION = 'pollaSesion_v2';
   let est = null;
   let alEntrar = () => {};
-  let paso = 'codigo';   // 'codigo' | 'jugadores'
+  let modo = 'login';   // 'login' | 'registro'
   let error = '';
+  let aviso = '';
+  let creando = false;  // evita crear el jugador dos veces
 
   const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const COLORES = ['#0540A6', '#E4002B', '#E6A700', '#0A8754', '#7c3aed', '#0891b2', '#be123c', '#c2410c'];
 
-  function sesionGuardada() {
-    try { return JSON.parse(localStorage.getItem(CLAVE_SESION)); } catch (e) { return null; }
-  }
-
-  async function iniciar(estado, callbackEntrar) {
-    est = estado;
-    alEntrar = callbackEntrar;
-
-    // ¿Sesión activa y el jugador todavía existe?
-    const ses = sesionGuardada();
-    if (ses && ses.jugadorId && est.jugadores.find(j => j.id === ses.jugadorId)) {
-      entrarComo(ses.jugadorId);
-      return;
-    }
-    mostrarLogin();
-  }
-
-  function entrarComo(jugadorId) {
+  function entrarApp(jugadorId) {
     est.usuarioActual = jugadorId;
-    localStorage.setItem(CLAVE_SESION, JSON.stringify({ jugadorId }));
     ocultarLogin();
     alEntrar();
   }
-
-  function salir() {
-    localStorage.removeItem(CLAVE_SESION);
-    paso = 'codigo'; error = '';
-    mostrarLogin();
-  }
-
   function mostrarLogin() {
     document.getElementById('app').style.display = 'none';
-    const cont = document.getElementById('pantalla-login');
-    cont.style.display = 'flex';
+    const c = document.getElementById('pantalla-login');
+    c.style.display = 'flex';
     pintar();
   }
   function ocultarLogin() {
@@ -61,113 +36,130 @@ const Auth = (function () {
     document.getElementById('app').style.display = 'block';
   }
 
-  function pintar() {
-    const cont = document.getElementById('pantalla-login');
-    const pista = !Datos.online
-      ? `<p class="login-pista">Modo de prueba · código: <strong>${esc(est.config.codigoInvitacion)}</strong></p>`
-      : '';
-
-    let cuerpo;
-    if (paso === 'codigo') {
-      cuerpo = `
-        <p class="login-sub">Ingresa el código de invitación de tu grupo para entrar.</p>
-        <div class="campo">
-          <input type="text" id="login-codigo" placeholder="Código de invitación" autocomplete="off"
-                 value="" style="text-align:center;text-transform:uppercase;font-weight:700;letter-spacing:.1em">
-        </div>
-        ${error ? `<div class="login-error">${esc(error)}</div>` : ''}
-        <button class="boton login-boton" data-accion="login-codigo">Entrar al grupo →</button>
-        ${pista}`;
-    } else {
-      const jugadores = est.jugadores.map(j => `
-        <div class="login-jug">
-          <div class="avatar" style="background:${j.color}">${esc((j.nombre || '?').charAt(0))}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700">${esc(j.nombre)} ${j.esOrganizador ? '<span class="chip grupo">organizador</span>' : ''}</div>
-            ${j.pin ? `<input type="password" inputmode="numeric" maxlength="6" placeholder="PIN" class="login-pin" data-jug="${j.id}">` : '<div class="texto-mini">Sin PIN · entra directo</div>'}
-          </div>
-          <button class="boton pequeno" data-accion="login-entrar" data-jug="${j.id}">Entrar</button>
-        </div>`).join('');
-
-      cuerpo = `
-        <p class="login-sub">¿Quién eres? Elige tu jugador o crea uno nuevo.</p>
-        ${error ? `<div class="login-error">${esc(error)}</div>` : ''}
-        <div class="login-lista">${jugadores || '<p class="texto-mini centro">Aún no hay jugadores. ¡Crea el primero!</p>'}</div>
-        <div class="login-nuevo">
-          <div class="tarjeta-titulo">➕ Crear jugador nuevo</div>
-          <div class="campo"><input type="text" id="nuevo-nombre" placeholder="Tu nombre" autocomplete="off"></div>
-          <div class="campo"><input type="password" id="nuevo-pin" inputmode="numeric" maxlength="6" placeholder="PIN (opcional, 4 dígitos)" autocomplete="off"></div>
-          <button class="boton" data-accion="login-crear">Crear y entrar</button>
-        </div>
-        <button class="login-volver" data-accion="login-volver">← Cambiar código</button>`;
+  async function iniciar(estado, callbackEntrar) {
+    est = estado; alEntrar = callbackEntrar;
+    if (!Datos.online) {                       // modo prueba local: entrar directo
+      const id = est.jugadores[0] && est.jugadores[0].id;
+      if (id) entrarApp(id); else mostrarLogin();
+      return;
     }
-
-    cont.innerHTML = `
-      <div class="login-tarjeta">
-        <div class="login-cinta"></div>
-        <div class="login-logo">🏆</div>
-        <h1 class="login-titulo">${esc(est.config.nombrePolla)}</h1>
-        ${cuerpo}
-      </div>`;
+    Datos.onAuth(s => manejarSesion(s));        // cambios de sesión (login/logout)
+    manejarSesion(await Datos.authSesion());    // sesión inicial
   }
 
-  // Eventos (delegados dentro de la pantalla de login)
+  async function manejarSesion(session) {
+    if (session && session.user) {
+      let j = Datos.jugadorPorEmail(session.user.email);
+      if (!j && !creando) {
+        creando = true;
+        const nombre = (session.user.user_metadata && session.user.user_metadata.nombre) || (session.user.email || 'Jugador').split('@')[0];
+        try { j = await Datos.crearJugador({ nombre, email: session.user.email, color: COLORES[est.jugadores.length % COLORES.length] }); }
+        catch (e) { console.warn(e); }
+        creando = false;
+      }
+      if (j) { entrarApp(j.id); return; }
+    }
+    est.usuarioActual = null;
+    mostrarLogin();
+  }
+
+  function salir() {
+    if (Datos.online) Datos.authSalir();   // onAuth → manejarSesion(null) → login
+    est.usuarioActual = null;
+    modo = 'login'; error = ''; aviso = '';
+    mostrarLogin();
+  }
+
+  function pintar() {
+    const cont = document.getElementById('pantalla-login');
+    let cuerpo;
+    if (!Datos.online) {
+      cuerpo = `<p class="login-sub">Modo de prueba (local). Entra como un jugador de ejemplo.</p>
+        <div class="login-lista">${est.jugadores.map(j => `<div class="login-jug"><div class="avatar" style="background:${j.color}">${esc((j.nombre || '?').charAt(0))}</div><div style="flex:1;min-width:0"><div style="font-weight:700">${esc(j.nombre)}</div></div><button class="boton pequeno" data-accion="login-local" data-jug="${j.id}">Entrar</button></div>`).join('')}</div>`;
+    } else if (modo === 'registro') {
+      cuerpo = `<p class="login-sub">Crea tu cuenta con tu correo. ¡Y a jugar!</p>
+        ${error ? `<div class="login-error">${esc(error)}</div>` : ''}
+        <div class="campo"><input type="text" id="reg-nombre" placeholder="Tu nombre" autocomplete="name"></div>
+        <div class="campo"><input type="email" id="reg-email" placeholder="Correo electrónico" autocomplete="email"></div>
+        <div class="campo"><input type="password" id="reg-pass" placeholder="Contraseña (mínimo 6)" autocomplete="new-password"></div>
+        <button class="boton login-boton" data-accion="login-registrar">Crear cuenta →</button>
+        <button class="login-volver" data-accion="login-modo-login">← Ya tengo cuenta</button>`;
+    } else {
+      cuerpo = `<p class="login-sub">Entra con tu correo y contraseña.</p>
+        ${error ? `<div class="login-error">${esc(error)}</div>` : ''}
+        ${aviso ? `<div class="login-ok">${esc(aviso)}</div>` : ''}
+        <div class="campo"><input type="email" id="log-email" placeholder="Correo electrónico" autocomplete="email"></div>
+        <div class="campo"><input type="password" id="log-pass" placeholder="Contraseña" autocomplete="current-password"></div>
+        <button class="boton login-boton" data-accion="login-entrar">Iniciar sesión →</button>
+        <div class="login-acciones"><button class="login-link" data-accion="login-modo-registro">Crear cuenta nueva</button><button class="login-link" data-accion="login-reset">Olvidé mi contraseña</button></div>`;
+    }
+    cont.innerHTML = `<div class="login-tarjeta"><div class="login-cinta"></div><div class="login-logo">🏆</div><h1 class="login-titulo">${esc(est.config.nombrePolla)}</h1>${cuerpo}</div>`;
+  }
+
   document.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-accion]');
     if (!el || !el.dataset.accion.startsWith('login-')) return;
-    const accion = el.dataset.accion;
+    const a = el.dataset.accion;
 
-    if (accion === 'login-codigo') {
-      const val = (document.getElementById('login-codigo').value || '').trim().toUpperCase();
-      const esperado = (est.config.codigoInvitacion || '').toUpperCase();
-      if (val && val === esperado) { paso = 'jugadores'; error = ''; }
-      else { error = 'Código incorrecto. Pídeselo al organizador.'; }
-      pintar();
+    if (a === 'login-local') { entrarApp(el.dataset.jug); return; }
+    if (a === 'login-modo-registro') { modo = 'registro'; error = ''; aviso = ''; pintar(); return; }
+    if (a === 'login-modo-login') { modo = 'login'; error = ''; aviso = ''; pintar(); return; }
+
+    if (a === 'login-entrar') {
+      const email = (document.getElementById('log-email').value || '').trim();
+      const pass = document.getElementById('log-pass').value || '';
+      if (!email || !pass) { error = 'Escribe tu correo y contraseña.'; pintar(); return; }
+      el.disabled = true; el.textContent = 'Entrando…';
+      const { error: err } = await Datos.authLogin(email, pass);
+      if (err) { error = traducir(err.message); aviso = ''; pintar(); }
+      return;   // si todo ok, onAuth → manejarSesion entra a la app
     }
 
-    if (accion === 'login-volver') { paso = 'codigo'; error = ''; pintar(); }
-
-    if (accion === 'login-entrar') {
-      const id = el.dataset.jug;
-      const j = est.jugadores.find(x => x.id === id);
-      if (j && j.pin) {
-        const input = document.querySelector(`.login-pin[data-jug="${id}"]`);
-        if (!input || input.value !== j.pin) { error = 'PIN incorrecto.'; pintar(); return; }
+    if (a === 'login-registrar') {
+      const nombre = (document.getElementById('reg-nombre').value || '').trim();
+      const email = (document.getElementById('reg-email').value || '').trim();
+      const pass = document.getElementById('reg-pass').value || '';
+      if (!nombre || !email || pass.length < 6) { error = 'Completa nombre, correo y una contraseña de al menos 6 caracteres.'; pintar(); return; }
+      el.disabled = true; el.textContent = 'Creando…';
+      const { data, error: err } = await Datos.authRegistrar(email, pass, nombre);
+      if (err) { error = traducir(err.message); pintar(); return; }
+      if (data && data.session) {
+        try { const j = await Datos.crearJugador({ nombre, email, color: COLORES[est.jugadores.length % COLORES.length] }); entrarApp(j.id); }
+        catch (e2) { error = 'Cuenta creada, pero no se pudo guardar el jugador. Inicia sesión.'; modo = 'login'; pintar(); }
+      } else {
+        modo = 'login'; error = ''; aviso = 'Te enviamos un correo para confirmar tu cuenta. Ábrelo y luego inicia sesión.'; pintar();
       }
-      entrarComo(id);
+      return;
     }
 
-    if (accion === 'login-crear') {
-      const nombre = (document.getElementById('nuevo-nombre').value || '').trim();
-      const pin = (document.getElementById('nuevo-pin').value || '').trim();
-      if (!nombre) { error = 'Escribe tu nombre.'; pintar(); return; }
-      if (est.jugadores.some(j => j.nombre.toLowerCase() === nombre.toLowerCase())) {
-        error = 'Ya hay un jugador con ese nombre. Elígelo de la lista.'; pintar(); return;
-      }
-      el.disabled = true;
-      try {
-        const nuevo = await Datos.crearJugador({
-          nombre,
-          color: COLORES[est.jugadores.length % COLORES.length],
-          pago: false, esOrganizador: false, pin,
-        });
-        entrarComo(nuevo.id);
-      } catch (err) {
-        error = 'No se pudo crear el jugador. Revisa la conexión.'; el.disabled = false; pintar();
-      }
+    if (a === 'login-reset') {
+      const email = (document.getElementById('log-email').value || '').trim();
+      if (!email) { error = 'Escribe tu correo arriba y vuelve a tocar "Olvidé mi contraseña".'; pintar(); return; }
+      await Datos.authReset(email);
+      error = ''; aviso = 'Te enviamos un correo para restablecer tu contraseña.'; pintar();
+      return;
     }
   });
 
-  // Enter para enviar el código
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
-    if (e.target.id === 'login-codigo') { e.preventDefault(); document.querySelector('[data-accion="login-codigo"]')?.click(); }
+    if (e.target.id === 'log-pass') { e.preventDefault(); document.querySelector('[data-accion="login-entrar"]')?.click(); }
+    if (e.target.id === 'reg-pass') { e.preventDefault(); document.querySelector('[data-accion="login-registrar"]')?.click(); }
   });
 
-  // Re-pinta la pantalla de login si está visible (p. ej. si entró un jugador nuevo).
+  function traducir(msg) {
+    msg = msg || '';
+    if (/Invalid login/i.test(msg)) return 'Correo o contraseña incorrectos.';
+    if (/already registered|already been registered|already exists/i.test(msg)) return 'Ese correo ya tiene cuenta. Inicia sesión.';
+    if (/Email not confirmed/i.test(msg)) return 'Debes confirmar tu correo antes de entrar.';
+    if (/at least 6|password should be/i.test(msg)) return 'La contraseña debe tener al menos 6 caracteres.';
+    if (/valid email|invalid format/i.test(msg)) return 'Escribe un correo válido.';
+    return msg;
+  }
+
   function refrescar() {
-    const cont = document.getElementById('pantalla-login');
-    if (cont && cont.style.display !== 'none') pintar();
+    const c = document.getElementById('pantalla-login');
+    if (c && c.style.display !== 'none') pintar();
   }
 
   return { iniciar, salir, refrescar, usuarioActual: () => (est ? est.usuarioActual : null) };
