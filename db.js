@@ -52,6 +52,7 @@ const Datos = (function () {
     est.predicciones   = datos.predicciones;
     est.apuestas       = datos.apuestas || {};
     est.resultadoFinal = datos.resultadoFinal;
+    est.bloqueados     = datos.bloqueados || [];
   }
 
   /* ============================================================
@@ -76,8 +77,8 @@ const Datos = (function () {
      MOTOR ONLINE (Supabase)
      ============================================================ */
   const montoCuota = () => (est && est.config ? est.config.montoApuesta : 0);
-  const aFilaJugador = j => ({ id: j.id, nombre: j.nombre, color: j.color, email: j.email || null, abonado: j.abonado || 0, pago: (j.abonado || 0) >= montoCuota(), es_organizador: !!j.esOrganizador, pin: j.pin || '' });
-  const deFilaJugador = r => ({ id: r.id, nombre: r.nombre, color: r.color, email: r.email || null, abonado: r.abonado || 0, esOrganizador: !!r.es_organizador, pin: r.pin || '' });
+  const aFilaJugador = j => ({ id: j.id, nombre: j.nombre, color: j.color, email: j.email || null, abonado: j.abonado || 0, pago: (j.abonado || 0) >= montoCuota(), es_organizador: !!j.esOrganizador, bloqueado: !!j.bloqueado, pin: j.pin || '' });
+  const deFilaJugador = r => ({ id: r.id, nombre: r.nombre, color: r.color, email: r.email || null, abonado: r.abonado || 0, esOrganizador: !!r.es_organizador, bloqueado: !!r.bloqueado, pin: r.pin || '' });
   const aFilaPartido = p => ({ id: p.id, orden: p.orden, grupo: p.grupo, fase: p.fase, ronda: p.ronda || null, local: p.local, visita: p.visita, fecha: p.fecha, estadio: p.estadio, jugado: !!p.jugado, resultado: p.resultado || null, goles_local: p.golesLocal, goles_visita: p.golesVisita });
   const deFilaPartido = r => ({ id: r.id, orden: r.orden, grupo: r.grupo, fase: r.fase, ronda: r.ronda || null, local: r.local, visita: r.visita, fecha: r.fecha, estadio: r.estadio, jugado: !!r.jugado, resultado: r.resultado || null, golesLocal: r.goles_local, golesVisita: r.goles_visita });
 
@@ -106,9 +107,11 @@ const Datos = (function () {
     }
     const partidos = (partRows || []).map(deFilaPartido);
 
-    // 3) JUGADORES (pueden no existir aún)
+    // 3) JUGADORES (separamos activos de los bloqueados)
     const { data: jugRows } = await sb.from('jugadores').select('*').order('creado');
-    const jugadores = (jugRows || []).map(deFilaJugador);
+    const todos = (jugRows || []).map(deFilaJugador);
+    const jugadores = todos.filter(j => !j.bloqueado);
+    const bloqueados = todos.filter(j => j.bloqueado).map(j => (j.email || '').toLowerCase()).filter(Boolean);
 
     // 4) PREDICCIONES + PICKS + APUESTAS POR PARTIDO
     const { data: predRows } = await sb.from('predicciones').select('*');
@@ -131,7 +134,7 @@ const Datos = (function () {
       apuestas[r.jugador_id][r.partido_id] = { pago: !!r.pago };
     });
 
-    aplicar({ config, jugadores, partidos, predicciones, apuestas, resultadoFinal });
+    aplicar({ config, jugadores, partidos, predicciones, apuestas, resultadoFinal, bloqueados });
   }
 
   /* ---------- Suscripción a cambios en tiempo real ---------- */
@@ -203,14 +206,15 @@ const Datos = (function () {
     },
 
     async eliminarJugador(id) {
-      est.jugadores = est.jugadores.filter(j => j.id !== id);
+      const j = est.jugadores.find(x => x.id === id);
+      est.jugadores = est.jugadores.filter(x => x.id !== id);
       delete est.predicciones[id];
       delete est.apuestas[id];
-      if (!MODO_ONLINE) return guardarLocal();
+      if (j && j.email) est.bloqueados = (est.bloqueados || []).concat((j.email || '').toLowerCase());
+      if (!MODO_ONLINE) return guardarLocal();   // local: basta con sacarlo de la lista
+      // Online: lo marcamos como bloqueado (no se borra la cuenta) y quitamos sus pronósticos
       await sb.from('predicciones').delete().eq('jugador_id', id);
-      await sb.from('picks_final').delete().eq('jugador_id', id);
-      await sb.from('apuestas').delete().eq('jugador_id', id);
-      await sb.from('jugadores').delete().eq('id', id);
+      await sb.from('jugadores').update({ bloqueado: true }).eq('id', id);
     },
 
     async guardarPrediccion(jugadorId, partidoId) {

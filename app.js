@@ -13,6 +13,7 @@ let estado = {
   jugadores: [],
   partidos: [],
   predicciones: {},   // predicciones[jugadorId].partidos[partidoId] = 'L' | 'E' | 'V'
+  bloqueados: [],     // correos de jugadores quitados (no pueden volver a entrar)
   resultadoFinal: { campeon: null, subcampeon: null },
   usuarioActual: null,
   vista: 'inicio',

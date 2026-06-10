@@ -49,6 +49,12 @@ const Auth = (function () {
 
   async function manejarSesion(session) {
     if (session && session.user) {
+      const emailL = (session.user.email || '').toLowerCase();
+      if ((est.bloqueados || []).includes(emailL)) {   // el organizador lo quitó
+        est.usuarioActual = null; modo = 'login'; aviso = '';
+        error = 'El organizador te quitó de la polla. Si crees que es un error, contáctalo.';
+        mostrarLogin(); return;
+      }
       let j = Datos.jugadorPorEmail(session.user.email);
       if (!j && !creando) {
         creando = true;

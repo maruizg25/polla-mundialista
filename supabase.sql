@@ -29,6 +29,7 @@ create table if not exists jugadores (
   pago           boolean default false,
   abonado        int default 0,
   es_organizador boolean default false,
+  bloqueado      boolean default false,
   pin            text default '',
   creado         timestamptz default now()
 );
