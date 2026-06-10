@@ -163,6 +163,18 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
 .grupo-cont { font-size: .78rem; font-weight: 800; color: var(--gris); background: var(--gris-claro); padding: 2px 10px; border-radius: 999px; margin-left: 8px; }
 .grupo-cont.ok { background: #dcfce7; color: #15803d; }
 
+/* Navegación por grupos (chips A–L) */
+.grupos-nav { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 12px; -webkit-overflow-scrolling: touch; }
+.gchip { flex: 0 0 auto; border: 2px solid var(--linea); background: var(--blanco); border-radius: 999px; min-width: 38px; padding: 7px 13px; font-weight: 800; font-size: .9rem; cursor: pointer; font-family: inherit; color: var(--gris); white-space: nowrap; }
+.gchip.sel { background: var(--azul); color: var(--blanco); border-color: var(--azul); }
+.gchip.ok { border-color: #86efac; color: #15803d; }
+.gchip.ok.sel { background: #16a34a; border-color: #16a34a; color: var(--blanco); }
+
+/* Fila de partido compacta */
+.partido.compacto { padding: 12px 14px; }
+.partido.compacto .partido-cab { margin-bottom: 8px; }
+.partido.compacto .pred-btn { padding: 11px 8px; }
+
 .pred-quitar { text-align: center; margin-top: 10px; }
 .link-quitar { background: none; border: none; color: var(--gris); font-size: .82rem; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: underline; padding: 4px; }
 .link-quitar:hover { color: var(--rojo); }
@@ -187,15 +199,17 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
 .res-btn.sel { border-color: var(--azul); background: var(--azul); color: var(--blanco); }
 .res-btn.limpiar { min-width: 34px; color: var(--rojo); border-color: #fecaca; font-size: .9rem; }
 
-/* Resultados del organizador (botones con texto claro) */
-.admin-res { padding: 13px 0; border-bottom: 1px solid var(--linea); }
+/* Resultados del organizador (íconos compactos, inline) */
+.admin-res { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--linea); }
 .admin-res:last-child { border-bottom: none; }
-.admin-res-info { font-weight: 700; margin-bottom: 8px; }
-.admin-res-btns { display: flex; gap: 7px; flex-wrap: wrap; }
-.res-btn2 { border: 2px solid var(--linea); background: var(--blanco); border-radius: 10px; padding: 9px 14px; font-weight: 700; font-size: .85rem; cursor: pointer; font-family: inherit; color: var(--tinta); }
-.res-btn2:hover { border-color: var(--azul); }
-.res-btn2.sel { border-color: var(--azul); background: var(--azul); color: var(--blanco); }
-.res-btn2.limpiar { color: var(--rojo); border-color: #fecaca; }
+.admin-res-info { min-width: 0; }
+.admin-res-info > span { font-size: .7rem; color: var(--gris); }
+.admin-res-eq { font-size: .9rem; }
+.admin-res-btns { display: flex; gap: 5px; flex-shrink: 0; }
+.res-ico { border: 2px solid var(--linea); background: var(--blanco); border-radius: 10px; width: 46px; height: 46px; font-size: 1.3rem; cursor: pointer; font-family: inherit; display: grid; place-items: center; padding: 0; }
+.res-ico:active { transform: scale(.94); }
+.res-ico.sel { border-color: var(--azul); background: var(--azul-cl); box-shadow: 0 0 0 2px var(--azul); }
+.res-ico.limpiar { font-size: 1rem; border-color: #fecaca; }
 
 /* ---------- APUESTAS POR PARTIDO (en desuso en v2) ---------- */
 .jackpot-banner { background: linear-gradient(135deg, var(--rojo), var(--rojo-osc)); color: var(--blanco); border-radius: var(--radio); padding: 12px 16px; font-size: .9rem; margin-bottom: 14px; text-align: center; box-shadow: var(--sombra); }
@@ -328,9 +342,5 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
 
   /* Pronóstico 1X2: botones cómodos para el pulgar */
   .pred-1x2 { gap: 6px; }
-  .pred-btn { font-size: .8rem; padding: 12px 6px; border-radius: 11px; min-height: 58px; }
-
-  /* Resultados del organizador: cada opción en su fila (más clara al tacto) */
-  .admin-res-btns { flex-direction: column; }
-  .admin-res-btns .res-btn2 { width: 100%; text-align: center; }
+  .pred-btn { font-size: .8rem; padding: 11px 6px; border-radius: 11px; min-height: 52px; }
 }

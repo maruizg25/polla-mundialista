@@ -19,6 +19,7 @@ let estado = {
 };
 let filtroCal = 'todos';
 let cdInterval = null;
+let grupoSel = null;   // grupo seleccionado en Partidos / Organizador (navegación por grupo)
 
 /* ----------------------------------------------------------------
    AYUDANTES
@@ -185,22 +186,25 @@ function vistaPartidos() {
   const emoji = pct === 100 ? '🏆' : (pct >= 66 ? '🔥' : (pct >= 33 ? '💪' : '🎯'));
   const grupos = {};
   estado.partidos.forEach(p => { (grupos[p.grupo] = grupos[p.grupo] || []).push(p); });
+  const claves = Object.keys(grupos).sort();
+  const completoG = g => { const ab = grupos[g].filter(p => !partidoBloqueado(p)); return ab.length > 0 && ab.every(p => pr.partidos[p.id]); };
+  if (!grupoSel || !grupos[grupoSel]) grupoSel = claves.find(g => !completoG(g)) || claves[0];
+  const chips = claves.map(g => `<button class="gchip ${g === grupoSel ? 'sel' : ''} ${completoG(g) ? 'ok' : ''}" data-accion="grupo" data-g="${g}">${g}${completoG(g) ? ' ✓' : ''}</button>`).join('');
+
+  const ps = grupos[grupoSel].sort((a, b) => (a.orden || 0) - (b.orden || 0));
+  const ab = ps.filter(p => !partidoBloqueado(p));
+  const he = ab.filter(p => pr.partidos[p.id]).length;
+  const okSel = ab.length > 0 && he === ab.length;
 
   let html = `<div class="titulo-vista">Partidos y pronósticos</div>
     <div class="subtitulo-vista">Toca quién crees que gana, o empate. 1 punto por acierto.</div>
     <div class="progreso-card">
       <div class="progreso-top"><span>${emoji} ${msg}</span><strong>${pct}%</strong></div>
       <div class="progreso-barra"><div class="progreso-fill" style="width:${pct}%"></div></div>
-    </div>`;
-
-  Object.keys(grupos).sort().forEach(g => {
-    const ps = grupos[g].sort((a, b) => (a.orden || 0) - (b.orden || 0));
-    const ab = ps.filter(p => !partidoBloqueado(p));
-    const he = ab.filter(p => pr.partidos[p.id]).length;
-    const okG = ab.length > 0 && he === ab.length;
-    html += `<div class="grupo-titulo">📋 Grupo ${g} <span class="grupo-cont ${okG ? 'ok' : ''}">${he}/${ab.length}${okG ? ' ✓' : ''}</span></div>`;
-    ps.forEach(p => { html += filaPartido(p, pr.partidos[p.id]); });
-  });
+    </div>
+    <div class="grupos-nav">${chips}</div>
+    <div class="grupo-titulo">📋 Grupo ${grupoSel} <span class="grupo-cont ${okSel ? 'ok' : ''}">${he}/${ab.length}${okSel ? ' ✓' : ''}</span></div>`;
+  ps.forEach(p => { html += filaPartido(p, pr.partidos[p.id]); });
   return html;
 }
 function filaPartido(p, pred) {
@@ -229,8 +233,8 @@ function filaPartido(p, pred) {
   }
 
   const quitar = (pred && !fijo) ? `<div class="pred-quitar"><button class="link-quitar" data-accion="pred-quitar" data-partido="${p.id}">Quitar mi pronóstico</button></div>` : '';
-  return `<div class="partido">
-      <div class="partido-cab"><span>${formatFecha(p.fecha)} · ${escapar(p.estadio || '')}</span>${chip}</div>
+  return `<div class="partido compacto">
+      <div class="partido-cab"><span>${formatFecha(p.fecha)}</span>${chip}</div>
       ${control}
       ${quitar}
       ${pie}</div>`;
@@ -287,11 +291,17 @@ function vistaBote() {
 function vistaAdmin() {
   if (!esOrganizador()) return `<div class="titulo-vista">Panel del organizador</div><div class="aviso info"><span class="ico">🔒</span><div>Esta sección es solo para el organizador de la polla.</div></div>`;
   const cfg = estado.config;
-  const resultados = estado.partidos.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map(p => {
-    const rb = (r, txt) => `<button class="res-btn2 ${p.resultado === r ? 'sel' : ''}" data-accion="res" data-partido="${p.id}" data-r="${r}">${txt}</button>`;
+  const gruposR = {};
+  estado.partidos.forEach(p => { (gruposR[p.grupo] = gruposR[p.grupo] || []).push(p); });
+  const clavesR = Object.keys(gruposR).sort();
+  const completoR = g => gruposR[g].every(p => p.resultado);
+  if (!grupoSel || !gruposR[grupoSel]) grupoSel = clavesR.find(g => !completoR(g)) || clavesR[0];
+  const chipsR = clavesR.map(g => `<button class="gchip ${g === grupoSel ? 'sel' : ''} ${completoR(g) ? 'ok' : ''}" data-accion="grupo" data-g="${g}">${g}${completoR(g) ? ' ✓' : ''}</button>`).join('');
+  const resultados = gruposR[grupoSel].sort((a, b) => (a.orden || 0) - (b.orden || 0)).map(p => {
+    const rb = (r, txt) => `<button class="res-ico ${p.resultado === r ? 'sel' : ''}" data-accion="res" data-partido="${p.id}" data-r="${r}" title="${escapar(textoResultado(p, r))}">${txt}</button>`;
     return `<div class="admin-res">
-        <div class="admin-res-info">${getEquipo(p.local).bandera} <strong>${nombreEquipo(p.local)}</strong> vs <strong>${nombreEquipo(p.visita)}</strong> ${getEquipo(p.visita).bandera} <span class="texto-mini">· Grupo ${p.grupo} · ${formatFecha(p.fecha)}</span></div>
-        <div class="admin-res-btns">${rb('L', `✅ Gana ${nombreEquipo(p.local)}`)}${rb('E', '🤝 Empate')}${rb('V', `✅ Gana ${nombreEquipo(p.visita)}`)}${p.resultado ? `<button class="res-btn2 limpiar" data-accion="res" data-partido="${p.id}" data-r="">✕ Borrar</button>` : ''}</div>
+        <div class="admin-res-info"><span>${formatFecha(p.fecha)}</span><div class="admin-res-eq">${getEquipo(p.local).bandera} <strong>${nombreEquipo(p.local)}</strong> <span class="texto-mini">vs</span> <strong>${nombreEquipo(p.visita)}</strong> ${getEquipo(p.visita).bandera}</div></div>
+        <div class="admin-res-btns">${rb('L', getEquipo(p.local).bandera)}${rb('E', '🤝')}${rb('V', getEquipo(p.visita).bandera)}${p.resultado ? `<button class="res-ico limpiar" data-accion="res" data-partido="${p.id}" data-r="" title="Borrar resultado">🗑️</button>` : ''}</div>
       </div>`;
   }).join('');
   const opts = sel => '<option value="">—</option>' + Object.keys(EQUIPOS).map(id => `<option value="${id}" ${sel === id ? 'selected' : ''}>${getEquipo(id).bandera} ${getEquipo(id).nombre}</option>`).join('');
@@ -299,7 +309,7 @@ function vistaAdmin() {
   return `<div class="titulo-vista">Panel del organizador 🛠️</div>
     <div class="subtitulo-vista">Marca el resultado de cada partido (gana local, empate o gana visita); los puntos se calculan solos.</div>
     <div class="aviso demo"><span class="ico">✨</span><div>¿Probar cómo funcionan los puntos? <button class="boton dorado pequeno" data-accion="demo-resultados">Cargar resultados de ejemplo</button> <button class="boton secundario pequeno" data-accion="borrar-resultados">Borrar resultados</button></div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados de los partidos</div><p class="texto-mini" style="margin-bottom:10px">Toca quién ganó cada partido (o empate). Los puntos de todos se calculan al instante. Puedes cambiarlo cuando quieras.</p>${resultados}</div>
+    <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados — Grupo ${grupoSel}</div><p class="texto-mini" style="margin-bottom:10px">Toca la bandera del <strong>ganador</strong>, o 🤝 si fue <strong>empate</strong>. Los puntos se calculan al instante.</p><div class="grupos-nav">${chipsR}</div>${resultados}</div>
     <div class="tarjeta"><div class="tarjeta-titulo">🔄 Fixture oficial</div>
       <p class="texto-mini">Recarga los 72 partidos oficiales del Mundial 2026. No borra los pronósticos ya hechos.</p>
       <div class="mt8"><button class="boton secundario" data-accion="re-sembrar">🔄 Re-cargar fixture oficial</button></div></div>
@@ -451,6 +461,7 @@ document.addEventListener('click', (e) => {
   switch (a) {
     case 'ir': estado.vista = el.dataset.vista; render(); break;
     case 'filtro-cal': filtroCal = el.dataset.filtro; render(); break;
+    case 'grupo': grupoSel = el.dataset.g; render(); break;
     case 'salir': Auth.salir(); break;
 
     case 'pred': {  // el jugador toca L / E / V (solo fija; no quita)
