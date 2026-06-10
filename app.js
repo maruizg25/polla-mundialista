@@ -564,7 +564,7 @@ function vistaPartidos() {
 
     if (pct === 100) {
       html += `<div class="aviso demo"><span class="ico">🏁</span><div>Ya completaste tus 72 pronósticos. Puedes pasar al resumen y guardar un respaldo.</div></div>`;
-      html += `<div class="mt8 centro"><button class="boton" data-accion="ir" data-vista="resumen">Ver resumen y respaldo →</button></div>`;
+      html += `<div class="mt8 centro"><button class="boton" data-accion="ir" data-vista="resumen">Ver resumen y respaldo →</button>${puedeCerrarPronosticos(yo.id) ? ' <button class="boton roja" data-accion="cerrar-mis-pronosticos">🔒 Cerrar mis pronósticos</button>' : ''}</div>`;
     }
 
   const f = faseInfo(faseSel);
