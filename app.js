@@ -188,9 +188,20 @@ function premioTotal() { return fasesCfg().reduce((s, f) => s + premioFase(f.id)
 function formatearMontoBase() {
   const fases = fasesCfg();
   const todosIguales = fases.length > 0 && fases.every(f => (f.id === 'final' ? (f.monto == null || f.monto === 0) : (f.monto == null || f.monto === 1)));
+  const faseGrupos = fases.find(f => f.id === 'grupos');
+  const faseElim = fases.find(f => f.id === 'eliminatorias');
+  const faseFinal = fases.find(f => f.id === 'final');
+  const legadoSoloGrupos = !!(faseGrupos && faseElim && faseFinal
+    && Number(faseGrupos.monto || 0) === 1
+    && Number(faseElim.monto || 0) === 0
+    && Number(faseFinal.monto || 0) === 0);
   let cambio = false;
   if (todosIguales) fases.forEach(f => { f.monto = (f.id === 'final' ? 0 : 5); });
   if (todosIguales) cambio = true;
+  if (!todosIguales && legadoSoloGrupos) {
+    faseGrupos.monto = 5;
+    cambio = true;
+  }
   if (!estado.config.montoApuesta || estado.config.montoApuesta === 1) { estado.config.montoApuesta = 5; cambio = true; }
   return cambio;
 }
