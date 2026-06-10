@@ -29,9 +29,7 @@ const Datos = (function () {
       predicciones[j.id] = { partidos: {}, campeon: null, subcampeon: null };
       apuestas[j.id] = {};
       PARTIDOS_SEMILLA.forEach((p, pi) => {
-        predicciones[j.id].partidos[p.id] = { local: (ji * 7 + pi * 3) % 4, visita: (ji * 5 + pi * 2 + 1) % 4 };
-        // Demo: cada jugador entra a algunas de las primeras apuestas (algunas pagadas)
-        if (pi < 8 && (ji + pi) % 2 === 0) apuestas[j.id][p.id] = { pago: ji % 2 === 0 };
+        predicciones[j.id].partidos[p.id] = ['L', 'E', 'V'][(ji * 2 + pi) % 3]; // pronóstico demo 1X2
       });
       predicciones[j.id].campeon    = ['arg', 'ecu', 'bra', 'esp', 'fra'][ji % 5];
       predicciones[j.id].subcampeon = ['col', 'mex', 'por', 'ned', 'cro'][ji % 5];
@@ -80,8 +78,8 @@ const Datos = (function () {
   const montoCuota = () => (est && est.config ? est.config.montoApuesta : 0);
   const aFilaJugador = j => ({ id: j.id, nombre: j.nombre, color: j.color, abonado: j.abonado || 0, pago: (j.abonado || 0) >= montoCuota(), es_organizador: !!j.esOrganizador, pin: j.pin || '' });
   const deFilaJugador = r => ({ id: r.id, nombre: r.nombre, color: r.color, abonado: r.abonado || 0, esOrganizador: !!r.es_organizador, pin: r.pin || '' });
-  const aFilaPartido = p => ({ id: p.id, orden: p.orden, grupo: p.grupo, fase: p.fase, local: p.local, visita: p.visita, fecha: p.fecha, estadio: p.estadio, jugado: !!p.jugado, goles_local: p.golesLocal, goles_visita: p.golesVisita });
-  const deFilaPartido = r => ({ id: r.id, orden: r.orden, grupo: r.grupo, fase: r.fase, local: r.local, visita: r.visita, fecha: r.fecha, estadio: r.estadio, jugado: !!r.jugado, golesLocal: r.goles_local, golesVisita: r.goles_visita });
+  const aFilaPartido = p => ({ id: p.id, orden: p.orden, grupo: p.grupo, fase: p.fase, local: p.local, visita: p.visita, fecha: p.fecha, estadio: p.estadio, jugado: !!p.jugado, resultado: p.resultado || null, goles_local: p.golesLocal, goles_visita: p.golesVisita });
+  const deFilaPartido = r => ({ id: r.id, orden: r.orden, grupo: r.grupo, fase: r.fase, local: r.local, visita: r.visita, fecha: r.fecha, estadio: r.estadio, jugado: !!r.jugado, resultado: r.resultado || null, golesLocal: r.goles_local, golesVisita: r.goles_visita });
 
   async function cargarOnline() {
     // 1) CONFIG (fila única id=1); si no existe, la creamos.
@@ -120,7 +118,7 @@ const Datos = (function () {
     jugadores.forEach(j => { predicciones[j.id] = { partidos: {}, campeon: null, subcampeon: null }; apuestas[j.id] = {}; });
     (predRows || []).forEach(r => {
       if (!predicciones[r.jugador_id]) predicciones[r.jugador_id] = { partidos: {}, campeon: null, subcampeon: null };
-      predicciones[r.jugador_id].partidos[r.partido_id] = { local: r.local, visita: r.visita };
+      predicciones[r.jugador_id].partidos[r.partido_id] = r.resultado || null; // 'L' | 'E' | 'V'
     });
     (pickRows || []).forEach(r => {
       if (!predicciones[r.jugador_id]) predicciones[r.jugador_id] = { partidos: {}, campeon: null, subcampeon: null };
@@ -215,7 +213,7 @@ const Datos = (function () {
     async guardarPrediccion(jugadorId, partidoId) {
       const pred = est.predicciones[jugadorId].partidos[partidoId];
       if (!MODO_ONLINE) return guardarLocal();
-      await sb.from('predicciones').upsert({ jugador_id: jugadorId, partido_id: partidoId, local: pred.local, visita: pred.visita }, { onConflict: 'jugador_id,partido_id' });
+      await sb.from('predicciones').upsert({ jugador_id: jugadorId, partido_id: partidoId, resultado: pred }, { onConflict: 'jugador_id,partido_id' });
     },
 
     async guardarPickFinal(jugadorId) {
@@ -236,7 +234,7 @@ const Datos = (function () {
       if (!MODO_ONLINE) return guardarLocal();
       await sb.from('config').update({
         nombre: c.nombrePolla, codigo: c.codigoInvitacion, moneda: c.moneda,
-        monto: c.montoApuesta, monto_partido: c.montoPartido, puntos: c.puntos,
+        monto: c.montoApuesta, puntos: c.puntos,
         campeon_real: rf.campeon, subcampeon_real: rf.subcampeon,
       }).eq('id', 1);
     },

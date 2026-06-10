@@ -167,7 +167,6 @@ const CONFIG_DEFAULT = {
   nombrePolla: 'Polla Mundialista 2026',
   codigoInvitacion: 'ECUADOR26',
   moneda: 'USD',
-  montoApuesta: 10,   // cuota del BOTE GENERAL del Mundial (se puede abonar por partes)
-  montoPartido: 2,    // lo que cuesta entrar a la apuesta de UN partido
-  puntos: { marcadorExacto: 5, resultadoAcertado: 3, campeon: 15, subcampeon: 7 },
+  montoApuesta: 1,    // premio/bote por etapa (solo informativo, $1 en la primera)
+  puntos: { acierto: 1, campeon: 1, subcampeon: 1 },  // 1 punto por acertar el resultado (L/E/V)
 };
