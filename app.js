@@ -190,12 +190,14 @@ function montoVisualFase(faseId) {
   const fg = fases.find(x => x.id === 'grupos');
   const fe = fases.find(x => x.id === 'eliminatorias');
   const ff = fases.find(x => x.id === 'final');
-  const legacySoloGrupos = !!(fg && fe && ff
-    && Number(fg.monto || 0) === 1
-    && Number(fe.monto || 0) === 0
-    && Number(ff.monto || 0) === 0);
-  if (faseId === 'grupos' && legacySoloGrupos) {
-    return Number(estado.config.montoApuesta || 0) || 5;
+  const mg = Number(fg?.monto || 0);
+  const me = Number(fe?.monto || 0);
+  const mf = Number(ff?.monto || 0);
+  const legacyMontosBajos = !!(fg && fe && ff && mg <= 1 && me <= 1 && mf <= 1 && (mg + me + mf) > 0);
+  const legacySoloGrupos = !!(fg && fe && ff && mg === 1 && me === 0 && mf === 0);
+  if (faseId === 'grupos' && (legacySoloGrupos || (legacyMontosBajos && mg === 0))) {
+    const def = (CONFIG_DEFAULT.fases || []).find(x => x.id === 'grupos');
+    return Number(def?.monto || 0) || 5;
   }
   return monto;
 }
