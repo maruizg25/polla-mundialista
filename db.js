@@ -273,7 +273,7 @@ const Datos = (function () {
     /* ---- AUTENTICACIÓN (Supabase Auth: correo + contraseña) ---- */
     async authSesion() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
     async authLogin(email, password) { return await sb.auth.signInWithPassword({ email, password }); },
-    async authRegistrar(email, password, nombre) { return await sb.auth.signUp({ email, password, options: { data: { nombre } } }); },
+    async authRegistrar(email, password, nombre) { return await sb.auth.signUp({ email, password, options: { data: { nombre }, emailRedirectTo: window.location.origin } }); },
     async authReset(email) { return await sb.auth.resetPasswordForEmail(email); },
     async authSalir() { if (sb) await sb.auth.signOut(); },
     onAuth(cb) { if (sb) sb.auth.onAuthStateChange((_evt, session) => cb(session)); },
