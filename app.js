@@ -224,10 +224,10 @@ function vistaAdmin() {
   if (!esOrganizador()) return `<div class="titulo-vista">Panel del organizador</div><div class="aviso info"><span class="ico">🔒</span><div>Esta sección es solo para el organizador de la polla.</div></div>`;
   const cfg = estado.config;
   const resultados = estado.partidos.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map(p => {
-    const rb = (r, txt) => `<button class="res-btn ${p.resultado === r ? 'sel' : ''}" data-accion="res" data-partido="${p.id}" data-r="${r}">${txt}</button>`;
-    return `<div class="admin-resultado">
-        <div><div style="font-weight:700">${getEquipo(p.local).bandera} ${nombreEquipo(p.local)} vs ${nombreEquipo(p.visita)} ${getEquipo(p.visita).bandera}</div><div class="texto-mini">Grupo ${p.grupo} · ${formatFecha(p.fecha)}</div></div>
-        <div class="admin-1x2">${rb('L', getEquipo(p.local).bandera)}${rb('E', 'X')}${rb('V', getEquipo(p.visita).bandera)}${p.resultado ? `<button class="res-btn limpiar" data-accion="res" data-partido="${p.id}" data-r="">✕</button>` : ''}</div>
+    const rb = (r, txt) => `<button class="res-btn2 ${p.resultado === r ? 'sel' : ''}" data-accion="res" data-partido="${p.id}" data-r="${r}">${txt}</button>`;
+    return `<div class="admin-res">
+        <div class="admin-res-info">${getEquipo(p.local).bandera} <strong>${nombreEquipo(p.local)}</strong> vs <strong>${nombreEquipo(p.visita)}</strong> ${getEquipo(p.visita).bandera} <span class="texto-mini">· Grupo ${p.grupo} · ${formatFecha(p.fecha)}</span></div>
+        <div class="admin-res-btns">${rb('L', `✅ Gana ${nombreEquipo(p.local)}`)}${rb('E', '🤝 Empate')}${rb('V', `✅ Gana ${nombreEquipo(p.visita)}`)}${p.resultado ? `<button class="res-btn2 limpiar" data-accion="res" data-partido="${p.id}" data-r="">✕ Borrar</button>` : ''}</div>
       </div>`;
   }).join('');
   const opts = sel => '<option value="">—</option>' + Object.keys(EQUIPOS).map(id => `<option value="${id}" ${sel === id ? 'selected' : ''}>${getEquipo(id).bandera} ${getEquipo(id).nombre}</option>`).join('');
@@ -235,7 +235,7 @@ function vistaAdmin() {
   return `<div class="titulo-vista">Panel del organizador 🛠️</div>
     <div class="subtitulo-vista">Marca el resultado de cada partido (gana local, empate o gana visita); los puntos se calculan solos.</div>
     <div class="aviso demo"><span class="ico">✨</span><div>¿Probar cómo funcionan los puntos? <button class="boton dorado pequeno" data-accion="demo-resultados">Cargar resultados de ejemplo</button> <button class="boton secundario pequeno" data-accion="borrar-resultados">Borrar resultados</button></div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados de los partidos</div><p class="texto-mini" style="margin-bottom:8px">Toca: 🏠 = gana local · X = empate · ✈️ = gana visita.</p>${resultados}</div>
+    <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados de los partidos</div><p class="texto-mini" style="margin-bottom:10px">Toca quién ganó cada partido (o empate). Los puntos de todos se calculan al instante. Puedes cambiarlo cuando quieras.</p>${resultados}</div>
     <div class="tarjeta"><div class="tarjeta-titulo">🔄 Fixture oficial</div>
       <p class="texto-mini">Recarga los 72 partidos oficiales del Mundial 2026. No borra los pronósticos ya hechos.</p>
       <div class="mt8"><button class="boton secundario" data-accion="re-sembrar">🔄 Re-cargar fixture oficial</button></div></div>

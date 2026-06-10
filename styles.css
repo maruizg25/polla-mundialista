@@ -155,6 +155,16 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
 .res-btn.sel { border-color: var(--azul); background: var(--azul); color: var(--blanco); }
 .res-btn.limpiar { min-width: 34px; color: var(--rojo); border-color: #fecaca; font-size: .9rem; }
 
+/* Resultados del organizador (botones con texto claro) */
+.admin-res { padding: 13px 0; border-bottom: 1px solid var(--linea); }
+.admin-res:last-child { border-bottom: none; }
+.admin-res-info { font-weight: 700; margin-bottom: 8px; }
+.admin-res-btns { display: flex; gap: 7px; flex-wrap: wrap; }
+.res-btn2 { border: 2px solid var(--linea); background: var(--blanco); border-radius: 10px; padding: 9px 14px; font-weight: 700; font-size: .85rem; cursor: pointer; font-family: inherit; color: var(--tinta); }
+.res-btn2:hover { border-color: var(--azul); }
+.res-btn2.sel { border-color: var(--azul); background: var(--azul); color: var(--blanco); }
+.res-btn2.limpiar { color: var(--rojo); border-color: #fecaca; }
+
 /* ---------- APUESTAS POR PARTIDO (en desuso en v2) ---------- */
 .jackpot-banner { background: linear-gradient(135deg, var(--rojo), var(--rojo-osc)); color: var(--blanco); border-radius: var(--radio); padding: 12px 16px; font-size: .9rem; margin-bottom: 14px; text-align: center; box-shadow: var(--sombra); }
 .apuesta-strip { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--linea); }
