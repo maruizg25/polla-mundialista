@@ -92,6 +92,7 @@ const Datos = (function () {
     const config = {
       nombrePolla: cfgRow.nombre, codigoInvitacion: cfgRow.codigo, moneda: cfgRow.moneda,
       montoApuesta: cfgRow.monto,
+      organizadorEmail: CONFIG_DEFAULT.organizadorEmail,   // fijo desde el código
       puntos: cfgRow.puntos || CONFIG_DEFAULT.puntos,
       fases: (cfgRow.fases && cfgRow.fases.length) ? cfgRow.fases : JSON.parse(JSON.stringify(CONFIG_DEFAULT.fases)),
     };
@@ -173,7 +174,9 @@ const Datos = (function () {
     // Crea un jugador. El primero en registrarse queda como organizador.
     async crearJugador(jugador) {
       const esPrimero = est.jugadores.length === 0;
-      const nuevo = { abonado: 0, ...jugador, esOrganizador: jugador.esOrganizador || esPrimero };
+      const emailOrg = ((est.config && est.config.organizadorEmail) || '').toLowerCase();
+      const esOrgEmail = !!emailOrg && (jugador.email || '').toLowerCase() === emailOrg;
+      const nuevo = { abonado: 0, ...jugador, esOrganizador: jugador.esOrganizador || esPrimero || esOrgEmail };
       if (!MODO_ONLINE) {
         nuevo.id = nuevo.id || uid();
         est.jugadores.push(nuevo);

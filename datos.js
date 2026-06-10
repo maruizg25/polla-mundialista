@@ -168,6 +168,9 @@ const CONFIG_DEFAULT = {
   codigoInvitacion: 'ECUADOR26',
   moneda: 'USD',
   montoApuesta: 1,    // (legado) compatibilidad
+  // Este correo SIEMPRE es organizador (el dueño de la polla), sin importar
+  // el orden de registro. Cámbialo si lo administra otra persona.
+  organizadorEmail: 'jhonamaru72@gmail.com',
   puntos: { acierto: 1 },   // 1 punto por acertar el resultado
   // Las 3 fases. El organizador abre/cierra cada una y define su premio (bote).
   fases: [
