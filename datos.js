@@ -167,6 +167,12 @@ const CONFIG_DEFAULT = {
   nombrePolla: 'Polla Mundialista 2026',
   codigoInvitacion: 'ECUADOR26',
   moneda: 'USD',
-  montoApuesta: 1,    // premio/bote por etapa (solo informativo, $1 en la primera)
-  puntos: { acierto: 1, campeon: 1, subcampeon: 1 },  // 1 punto por acertar el resultado (L/E/V)
+  montoApuesta: 1,    // (legado) compatibilidad
+  puntos: { acierto: 1 },   // 1 punto por acertar el resultado
+  // Las 3 fases. El organizador abre/cierra cada una y define su premio (bote).
+  fases: [
+    { id: 'grupos',        nombre: 'Fase de grupos', abierta: true,  monto: 1 },
+    { id: 'eliminatorias', nombre: 'Eliminatorias',  abierta: false, monto: 1 },
+    { id: 'final',         nombre: 'Final',          abierta: false, monto: 1 },
+  ],
 };

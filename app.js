@@ -20,6 +20,15 @@ let estado = {
 let filtroCal = 'todos';
 let cdInterval = null;
 let grupoSel = null;   // grupo seleccionado en Partidos / Organizador (navegación por grupo)
+let faseSel = 'grupos';   // fase seleccionada (grupos | eliminatorias | final)
+let faseTabla = 'total';  // fase seleccionada en Posiciones (total | grupos | ...)
+
+/* --- Fases --- */
+function fasesCfg() { return estado.config.fases || []; }
+function faseInfo(id) { return fasesCfg().find(f => f.id === id) || { id, nombre: id, abierta: true, monto: 0 }; }
+function faseAbierta(id) { return !!faseInfo(id).abierta; }
+function partidosDeFase(id) { return estado.partidos.filter(p => (p.fase || 'grupos') === id); }
+function esKnockout(p) { return (p.fase || 'grupos') !== 'grupos'; }
 
 /* ----------------------------------------------------------------
    AYUDANTES
@@ -56,6 +65,7 @@ function diaKey(d) { return new Intl.DateTimeFormat('en-CA', { year: 'numeric', 
 function diaLargo(d) { const s = new Intl.DateTimeFormat('es-EC', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ_EC }).format(d); return s.charAt(0).toUpperCase() + s.slice(1); }
 function partidoBloqueado(p) {
   if (p.jugado) return true;
+  if (!faseAbierta(p.fase || 'grupos')) return true;   // fase cerrada: no se pronostica
   const inicio = fechaEc(p.fecha);
   return !isNaN(inicio) && inicio.getTime() <= Date.now();
 }
@@ -118,16 +128,15 @@ function puntosDePartido(pred, p) {
   if (!pred) return 0;                           // no pronosticó
   return pred === p.resultado ? (estado.config.puntos.acierto || 1) : 0;
 }
-function puntosTotales(jugadorId) {
+function puntosEnPartidos(jugadorId, lista) {
   const pr = estado.predicciones[jugadorId];
   if (!pr) return 0;
   let total = 0;
-  estado.partidos.forEach(p => { const x = puntosDePartido(pr.partidos[p.id], p); if (x != null) total += x; });
-  const rf = estado.resultadoFinal;
-  if (rf.campeon && pr.campeon === rf.campeon) total += (estado.config.puntos.campeon || 0);
-  if (rf.subcampeon && pr.subcampeon === rf.subcampeon) total += (estado.config.puntos.subcampeon || 0);
+  lista.forEach(p => { const x = puntosDePartido(pr.partidos[p.id], p); if (x != null) total += x; });
   return total;
 }
+function puntosTotales(jugadorId) { return puntosEnPartidos(jugadorId, estado.partidos); }
+function puntosDeFase(jugadorId, faseId) { return puntosEnPartidos(jugadorId, partidosDeFase(faseId)); }
 function aciertosDe(jugadorId) {
   const pr = estado.predicciones[jugadorId];
   if (!pr) return 0;
@@ -135,18 +144,20 @@ function aciertosDe(jugadorId) {
   estado.partidos.forEach(p => { if (p.jugado && p.resultado && pr.partidos[p.id] === p.resultado) n++; });
   return n;
 }
-function tablaPosiciones() {
+function tablaPosiciones(faseId) {
   return estado.jugadores
-    .map(j => ({ jugador: j, puntos: puntosTotales(j.id), aciertos: aciertosDe(j.id) }))
+    .map(j => ({ jugador: j, puntos: (faseId && faseId !== 'total') ? puntosDeFase(j.id, faseId) : puntosTotales(j.id), aciertos: aciertosDe(j.id) }))
     .sort((a, b) => b.puntos - a.puntos || b.aciertos - a.aciertos || a.jugador.nombre.localeCompare(b.jugador.nombre));
 }
 function posicionDe(jugadorId) { return tablaPosiciones().findIndex(x => x.jugador.id === jugadorId) + 1; }
 function premioBote() { return (estado.config.montoApuesta || 0) * estado.jugadores.length; }
+function premioFase(faseId) { return (faseInfo(faseId).monto || 0) * estado.jugadores.length; }
+function premioTotal() { return fasesCfg().reduce((s, f) => s + (f.monto || 0), 0) * estado.jugadores.length; }
 
 /* ----------------------------------------------------------------
    VISTAS
    ---------------------------------------------------------------- */
-const VISTAS = { inicio: vistaInicio, calendario: vistaCalendario, partidos: vistaPartidos, posiciones: vistaPosiciones, final: vistaFinal, bote: vistaBote, admin: vistaAdmin };
+const VISTAS = { inicio: vistaInicio, calendario: vistaCalendario, partidos: vistaPartidos, posiciones: vistaPosiciones, bote: vistaBote, admin: vistaAdmin };
 
 function vistaInicio() {
   const yo = usuario();
@@ -160,7 +171,7 @@ function vistaInicio() {
     <div class="resumen">
       <div class="stat azul"><div class="ico-fondo">🏅</div><div class="etq">Tu posición</div><div class="val">${posicionDe(yo.id)}º <span style="font-size:1rem;color:var(--gris)">de ${estado.jugadores.length}</span></div></div>
       <div class="stat"><div class="ico-fondo">⭐</div><div class="etq">Tus puntos</div><div class="val">${puntosTotales(yo.id)}</div></div>
-      <div class="stat dorada"><div class="ico-fondo">💰</div><div class="etq">Premio (bote)</div><div class="val">${formatMoneda(premioBote())}</div></div>
+      <div class="stat dorada"><div class="ico-fondo">💰</div><div class="etq">Premio total</div><div class="val">${formatMoneda(premioTotal())}</div></div>
       <div class="stat roja"><div class="ico-fondo">📝</div><div class="etq">Por pronosticar</div><div class="val">${faltan}</div></div>
     </div>
     <div class="tarjeta">
@@ -184,27 +195,44 @@ function vistaPartidos() {
   const pct = total ? Math.round(hechos / total * 100) : 0;
   const msg = total === 0 ? 'No hay partidos abiertos por ahora.' : (hechos === total ? '¡Listo! Pronosticaste todos 🎉' : (hechos === 0 ? '¡Dale, empieza a pronosticar! 🎯' : `Llevas ${hechos} de ${total}`));
   const emoji = pct === 100 ? '🏆' : (pct >= 66 ? '🔥' : (pct >= 33 ? '💪' : '🎯'));
-  const grupos = {};
-  estado.partidos.forEach(p => { (grupos[p.grupo] = grupos[p.grupo] || []).push(p); });
-  const claves = Object.keys(grupos).sort();
-  const completoG = g => { const ab = grupos[g].filter(p => !partidoBloqueado(p)); return ab.length > 0 && ab.every(p => pr.partidos[p.id]); };
-  if (!grupoSel || !grupos[grupoSel]) grupoSel = claves.find(g => !completoG(g)) || claves[0];
-  const chips = claves.map(g => `<button class="gchip ${g === grupoSel ? 'sel' : ''} ${completoG(g) ? 'ok' : ''}" data-accion="grupo" data-g="${g}">${g}${completoG(g) ? ' ✓' : ''}</button>`).join('');
-
-  const ps = grupos[grupoSel].sort((a, b) => (a.orden || 0) - (b.orden || 0));
-  const ab = ps.filter(p => !partidoBloqueado(p));
-  const he = ab.filter(p => pr.partidos[p.id]).length;
-  const okSel = ab.length > 0 && he === ab.length;
+  const fases = fasesCfg();
+  if (!fases.find(f => f.id === faseSel)) faseSel = 'grupos';
+  const fchips = fases.map(f => `<button class="fchip ${f.id === faseSel ? 'sel' : ''} ${f.abierta ? '' : 'cerrada'}" data-accion="fase" data-f="${f.id}">${escapar(f.nombre)}${f.abierta ? '' : ' 🔒'}</button>`).join('');
 
   let html = `<div class="titulo-vista">Partidos y pronósticos</div>
-    <div class="subtitulo-vista">Toca quién crees que gana, o empate. 1 punto por acierto.</div>
+    <div class="subtitulo-vista">Toca quién crees que gana. 1 punto por acierto.</div>
     <div class="progreso-card">
       <div class="progreso-top"><span>${emoji} ${msg}</span><strong>${pct}%</strong></div>
       <div class="progreso-barra"><div class="progreso-fill" style="width:${pct}%"></div></div>
     </div>
-    <div class="grupos-nav">${chips}</div>
-    <div class="grupo-titulo">📋 Grupo ${grupoSel} <span class="grupo-cont ${okSel ? 'ok' : ''}">${he}/${ab.length}${okSel ? ' ✓' : ''}</span></div>`;
-  ps.forEach(p => { html += filaPartido(p, pr.partidos[p.id]); });
+    <div class="fases-nav">${fchips}</div>`;
+
+  const f = faseInfo(faseSel);
+  const partidosF = partidosDeFase(faseSel);
+
+  if (!f.abierta) {
+    html += `<div class="aviso info"><span class="ico">🔒</span><div>La fase <strong>${escapar(f.nombre)}</strong> aún no está abierta. El organizador la abrirá cuando corresponda.</div></div>`;
+  } else if (partidosF.length === 0) {
+    html += `<div class="aviso info"><span class="ico">⏳</span><div>Aún no se agregan los partidos de <strong>${escapar(f.nombre)}</strong>. Aparecerán cuando se definan los equipos.</div></div>`;
+  } else if (faseSel === 'grupos') {
+    const grupos = {};
+    partidosF.forEach(p => { (grupos[p.grupo] = grupos[p.grupo] || []).push(p); });
+    const claves = Object.keys(grupos).sort();
+    const completoG = g => { const ab = grupos[g].filter(p => !partidoBloqueado(p)); return ab.length > 0 && ab.every(p => pr.partidos[p.id]); };
+    if (!grupoSel || !grupos[grupoSel]) grupoSel = claves.find(g => !completoG(g)) || claves[0];
+    const chips = claves.map(g => `<button class="gchip ${g === grupoSel ? 'sel' : ''} ${completoG(g) ? 'ok' : ''}" data-accion="grupo" data-g="${g}">${g}${completoG(g) ? ' ✓' : ''}</button>`).join('');
+    const ps = grupos[grupoSel].sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    const ab = ps.filter(p => !partidoBloqueado(p)); const he = ab.filter(p => pr.partidos[p.id]).length; const okSel = ab.length > 0 && he === ab.length;
+    html += `<div class="grupos-nav">${chips}</div><div class="grupo-titulo">📋 Grupo ${grupoSel} <span class="grupo-cont ${okSel ? 'ok' : ''}">${he}/${ab.length}${okSel ? ' ✓' : ''}</span></div>`;
+    ps.forEach(p => { html += filaPartido(p, pr.partidos[p.id]); });
+  } else {
+    let rondaAct = '';
+    partidosF.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach(p => {
+      const r = p.ronda || f.nombre;
+      if (r !== rondaAct) { rondaAct = r; html += `<div class="grupo-titulo">🏆 ${escapar(r)}</div>`; }
+      html += filaPartido(p, pr.partidos[p.id]);
+    });
+  }
   return html;
 }
 function filaPartido(p, pred) {
@@ -218,16 +246,17 @@ function filaPartido(p, pred) {
     const cls = (sel ? 'sel ' : '') + (tieneRes && p.resultado === r ? 'es-resultado ' : '');
     return `<button class="pred-btn ${cls}" ${fijo ? 'disabled' : `data-accion="pred" data-partido="${p.id}" data-r="${r}"`}>${sel ? '<span class="check">✓</span> ' : ''}${txt}</button>`;
   };
-  const control = `<div class="pred-1x2">
+  const ko = esKnockout(p);
+  const control = `<div class="pred-1x2${ko ? ' dos' : ''}">
     ${opt('L', `${getEquipo(p.local).bandera} ${nombreEquipo(p.local)}`)}
-    ${opt('E', '🤝 Empate')}
+    ${ko ? '' : opt('E', '🤝 Empate')}
     ${opt('V', `${nombreEquipo(p.visita)} ${getEquipo(p.visita).bandera}`)}
   </div>`;
 
   let pie = '';
   if (tieneRes) {
     const acerto = pred && pred === p.resultado;
-    pie = `<div class="pred-pie"><span>Resultado: <strong>${textoResultado(p, p.resultado)}</strong>${pred ? ` · tu pronóstico: ${textoResultado(p, pred)}` : ' · no pronosticaste'}</span>${pred ? (acerto ? '<span class="badge-puntos gano">✓ +1</span>' : '<span class="badge-puntos cero">+0</span>') : ''}</div>`;
+    pie = `<div class="pred-pie"><span>${ko ? 'Avanzó' : 'Resultado'}: <strong>${textoResultado(p, p.resultado)}</strong>${pred ? ` · tu pronóstico: ${textoResultado(p, pred)}` : ' · no pronosticaste'}</span>${pred ? (acerto ? '<span class="badge-puntos gano">✓ +1</span>' : '<span class="badge-puntos cero">+0</span>') : ''}</div>`;
   } else if (bloqueado) {
     pie = `<div class="pred-pie"><span>El partido empezó · pronóstico cerrado${pred ? `: <strong>${textoResultado(p, pred)}</strong>` : ''}</span><span class="candado">🔒</span></div>`;
   }
@@ -241,7 +270,11 @@ function filaPartido(p, pred) {
 }
 
 function vistaPosiciones() {
-  const tabla = tablaPosiciones();
+  const fases = fasesCfg();
+  const opciones = [{ id: 'total', nombre: 'General' }].concat(fases.map(f => ({ id: f.id, nombre: f.nombre })));
+  if (!opciones.find(o => o.id === faseTabla)) faseTabla = 'total';
+  const chips = opciones.map(o => `<button class="fchip ${o.id === faseTabla ? 'sel' : ''}" data-accion="fase-tabla" data-f="${o.id}">${escapar(o.nombre)}</button>`).join('');
+  const tabla = tablaPosiciones(faseTabla);
   const medallas = ['🥇', '🥈', '🥉'];
   const filas = tabla.map((row, i) => {
     const j = row.jugador, esYo = j.id === estado.usuarioActual;
@@ -253,9 +286,9 @@ function vistaPosiciones() {
         <td class="pts-celda">${row.puntos}</td></tr>`;
   }).join('');
   return `<div class="titulo-vista">Tabla de posiciones</div>
-    <div class="subtitulo-vista">1 punto por acertar el resultado. Quien más sume al final se lleva el premio.</div>
-    <div class="tarjeta"><table class="tabla-pos"><thead><tr><th>#</th><th>Jugador</th><th style="text-align:right">Puntos</th></tr></thead><tbody>${filas}</tbody></table></div>
-    <div class="aviso info"><span class="ico">ℹ️</span><div><strong>Cómo se gana:</strong> aciertas si pronosticas bien quién gana o si hay empate → <strong>1 punto</strong> por partido. Acertar campeón o subcampeón también suma.</div></div>`;
+    <div class="subtitulo-vista">1 punto por acierto. ${faseTabla === 'total' ? 'Ranking general (todas las fases).' : 'Ranking solo de esta fase.'}</div>
+    <div class="fases-nav">${chips}</div>
+    <div class="tarjeta"><table class="tabla-pos"><thead><tr><th>#</th><th>Jugador</th><th style="text-align:right">Puntos</th></tr></thead><tbody>${filas}</tbody></table></div>`;
 }
 
 function vistaFinal() {
@@ -278,51 +311,59 @@ function vistaFinal() {
 }
 
 function vistaBote() {
-  const lider = tablaPosiciones()[0];
-  return `<div class="titulo-vista">Premio 💰</div>
-    <div class="subtitulo-vista">Dato informativo. Los pagos se hacen entre ustedes (efectivo o transferencia); la web solo lleva la cuenta.</div>
-    <div class="bote-hero"><div class="etq">BOTE / PREMIO</div><div class="monto">${formatMoneda(premioBote())}</div>
-      <div class="nota">${formatMoneda(estado.config.montoApuesta)} por jugador × ${estado.jugadores.length} jugador(es)</div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">🏅 Va ganando</div>
-      ${lider ? `<div style="display:flex;align-items:center;gap:12px"><div class="avatar" style="background:${lider.jugador.color};width:46px;height:46px;font-size:1.1rem">${escapar(lider.jugador.nombre.charAt(0))}</div>
-        <div><div style="font-weight:800;font-size:1.1rem">${escapar(lider.jugador.nombre)}</div><div class="texto-mini">${lider.puntos} puntos · si terminara hoy se lleva ${formatMoneda(premioBote())}</div></div></div>` : '<p class="texto-mini">Aún no hay puntos.</p>'}</div>`;
+  const fases = fasesCfg();
+  return `<div class="titulo-vista">Premios 💰</div>
+    <div class="subtitulo-vista">Cada fase tiene su propio premio (dato informativo). Los pagos se hacen entre ustedes.</div>
+    <div class="bote-hero"><div class="etq">PREMIO TOTAL</div><div class="monto">${formatMoneda(premioTotal())}</div>
+      <div class="nota">${estado.jugadores.length} jugador(es) en juego</div></div>
+    ${fases.map(f => {
+      const lider = tablaPosiciones(f.id)[0];
+      const con = lider && lider.puntos > 0;
+      return `<div class="tarjeta"><div class="tarjeta-titulo">${f.abierta ? '🔓' : '🔒'} ${escapar(f.nombre)} · ${formatMoneda(premioFase(f.id))}</div>
+        ${con ? `<div style="display:flex;align-items:center;gap:12px"><div class="avatar" style="background:${lider.jugador.color};width:42px;height:42px;font-size:1rem">${escapar(lider.jugador.nombre.charAt(0))}</div><div><div style="font-weight:800">🏅 ${escapar(lider.jugador.nombre)}</div><div class="texto-mini">va ganando esta fase · ${lider.puntos} pts</div></div></div>` : `<p class="texto-mini">Aún sin puntos en esta fase.</p>`}</div>`;
+    }).join('')}`;
 }
 
 function vistaAdmin() {
   if (!esOrganizador()) return `<div class="titulo-vista">Panel del organizador</div><div class="aviso info"><span class="ico">🔒</span><div>Esta sección es solo para el organizador de la polla.</div></div>`;
   const cfg = estado.config;
-  const gruposR = {};
-  estado.partidos.forEach(p => { (gruposR[p.grupo] = gruposR[p.grupo] || []).push(p); });
-  const clavesR = Object.keys(gruposR).sort();
-  const completoR = g => gruposR[g].every(p => p.resultado);
-  if (!grupoSel || !gruposR[grupoSel]) grupoSel = clavesR.find(g => !completoR(g)) || clavesR[0];
-  const chipsR = clavesR.map(g => `<button class="gchip ${g === grupoSel ? 'sel' : ''} ${completoR(g) ? 'ok' : ''}" data-accion="grupo" data-g="${g}">${g}${completoR(g) ? ' ✓' : ''}</button>`).join('');
-  const resultados = gruposR[grupoSel].sort((a, b) => (a.orden || 0) - (b.orden || 0)).map(p => {
-    const rb = (r, txt) => `<button class="res-ico ${p.resultado === r ? 'sel' : ''}" data-accion="res" data-partido="${p.id}" data-r="${r}" title="${escapar(textoResultado(p, r))}">${txt}</button>`;
-    return `<div class="admin-res">
-        <div class="admin-res-info"><span>${formatFecha(p.fecha)}</span><div class="admin-res-eq">${getEquipo(p.local).bandera} <strong>${nombreEquipo(p.local)}</strong> <span class="texto-mini">vs</span> <strong>${nombreEquipo(p.visita)}</strong> ${getEquipo(p.visita).bandera}</div></div>
-        <div class="admin-res-btns">${rb('L', getEquipo(p.local).bandera)}${rb('E', '🤝')}${rb('V', getEquipo(p.visita).bandera)}${p.resultado ? `<button class="res-ico limpiar" data-accion="res" data-partido="${p.id}" data-r="" title="Borrar resultado">🗑️</button>` : ''}</div>
-      </div>`;
-  }).join('');
+  const fases = fasesCfg();
+  if (!fases.find(f => f.id === faseSel)) faseSel = 'grupos';
+  const fAct = faseInfo(faseSel);
   const opts = sel => '<option value="">—</option>' + Object.keys(EQUIPOS).map(id => `<option value="${id}" ${sel === id ? 'selected' : ''}>${getEquipo(id).bandera} ${getEquipo(id).nombre}</option>`).join('');
+  const fchipsR = fases.map(ff => `<button class="fchip ${ff.id === faseSel ? 'sel' : ''}" data-accion="fase" data-f="${ff.id}">${escapar(ff.nombre)}</button>`).join('');
+  const rbtns = p => { const ko = esKnockout(p); const b = (r, txt) => `<button class="res-ico ${p.resultado === r ? 'sel' : ''}" data-accion="res" data-partido="${p.id}" data-r="${r}" title="${escapar(textoResultado(p, r))}">${txt}</button>`; return `<div class="admin-res-btns">${b('L', getEquipo(p.local).bandera)}${ko ? '' : b('E', '🤝')}${b('V', getEquipo(p.visita).bandera)}${p.resultado ? `<button class="res-ico limpiar" data-accion="res" data-partido="${p.id}" data-r="" title="Borrar resultado">🗑️</button>` : ''}</div>`; };
+  const filaRes = p => `<div class="admin-res"><div class="admin-res-info"><span>${p.fecha ? formatFecha(p.fecha) : (p.ronda || '')}</span><div class="admin-res-eq">${getEquipo(p.local).bandera} <strong>${nombreEquipo(p.local)}</strong> <span class="texto-mini">vs</span> <strong>${nombreEquipo(p.visita)}</strong> ${getEquipo(p.visita).bandera}</div></div>${rbtns(p)}</div>`;
+  const partidosFA = partidosDeFase(faseSel);
+  let resBody = '';
+  if (partidosFA.length === 0) {
+    resBody = `<p class="texto-mini centro" style="padding:14px">No hay partidos en esta fase.${faseSel !== 'grupos' ? ' Agrégalos abajo.' : ''}</p>`;
+  } else if (faseSel === 'grupos') {
+    const gr = {}; partidosFA.forEach(p => { (gr[p.grupo] = gr[p.grupo] || []).push(p); });
+    const cl = Object.keys(gr).sort();
+    const okR = g => gr[g].every(p => p.resultado);
+    if (!grupoSel || !gr[grupoSel]) grupoSel = cl.find(g => !okR(g)) || cl[0];
+    resBody = `<div class="grupos-nav">${cl.map(g => `<button class="gchip ${g === grupoSel ? 'sel' : ''} ${okR(g) ? 'ok' : ''}" data-accion="grupo" data-g="${g}">${g}${okR(g) ? ' ✓' : ''}</button>`).join('')}</div>`;
+    resBody += gr[grupoSel].sort((a, b) => (a.orden || 0) - (b.orden || 0)).map(filaRes).join('');
+  } else {
+    let ra = '';
+    resBody = partidosFA.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map(p => { let h = ''; const r = p.ronda || fAct.nombre; if (r !== ra) { ra = r; h += `<div class="grupo-titulo">🏆 ${escapar(r)}</div>`; } return h + filaRes(p) + `<div style="text-align:right;margin:-4px 0 6px"><button class="link-quitar" data-accion="quitar-partido" data-partido="${p.id}">✕ quitar partido</button></div>`; }).join('');
+  }
+  const fasesCard = `<div class="tarjeta"><div class="tarjeta-titulo">🥇 Fases del concurso</div><p class="texto-mini" style="margin-bottom:10px">Abre cada fase cuando corresponda. Mientras esté cerrada, nadie puede pronosticar esos partidos.</p>${fases.map(ff => `<div class="fase-fila"><div><strong>${escapar(ff.nombre)}</strong> <span class="texto-mini">· ${partidosDeFase(ff.id).length} partidos · premio ${formatMoneda(premioFase(ff.id))}</span></div><div class="fase-acc"><label class="texto-mini">$<input type="number" min="0" step="0.5" value="${ff.monto}" data-accion="fase-monto" data-f="${ff.id}" style="width:54px"></label><button class="boton ${ff.abierta ? 'secundario' : 'dorado'} pequeno" data-accion="fase-toggle" data-f="${ff.id}">${ff.abierta ? '🔓 Abierta' : '🔒 Cerrada'}</button></div></div>`).join('')}</div>`;
+  const addCard = `<div class="tarjeta"><div class="tarjeta-titulo">➕ Agregar partido (eliminatoria / final)</div><p class="texto-mini" style="margin-bottom:10px">Cuando se definan los equipos, agrégalos aquí. Se predice quién avanza.</p><div class="fila-campos"><div class="campo"><label>Fase</label><select id="add-fase"><option value="eliminatorias">Eliminatorias</option><option value="final">Final</option></select></div><div class="campo"><label>Ronda</label><input type="text" id="add-ronda" placeholder="Octavos, Cuartos, Semifinal…"></div></div><div class="fila-campos"><div class="campo"><label>Local</label><select id="add-local">${opts('')}</select></div><div class="campo"><label>Visitante</label><select id="add-visita">${opts('')}</select></div></div><div class="campo"><label>Fecha y hora (Ecuador)</label><input type="datetime-local" id="add-fecha"></div><button class="boton" data-accion="agregar-partido">➕ Agregar partido</button></div>`;
 
   return `<div class="titulo-vista">Panel del organizador 🛠️</div>
-    <div class="subtitulo-vista">Marca el resultado de cada partido (gana local, empate o gana visita); los puntos se calculan solos.</div>
-    <div class="aviso demo"><span class="ico">✨</span><div>¿Probar cómo funcionan los puntos? <button class="boton dorado pequeno" data-accion="demo-resultados">Cargar resultados de ejemplo</button> <button class="boton secundario pequeno" data-accion="borrar-resultados">Borrar resultados</button></div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados — Grupo ${grupoSel}</div><p class="texto-mini" style="margin-bottom:10px">Toca la bandera del <strong>ganador</strong>, o 🤝 si fue <strong>empate</strong>. Los puntos se calculan al instante.</p><div class="grupos-nav">${chipsR}</div>${resultados}</div>
+    <div class="subtitulo-vista">Abre las fases, marca resultados y administra a los jugadores.</div>
+    ${fasesCard}
+    <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados</div><p class="texto-mini" style="margin-bottom:10px">Toca la bandera del <strong>${faseSel === 'grupos' ? 'ganador (o 🤝 empate)' : 'que avanza'}</strong>. Los puntos se calculan al instante.</p><div class="fases-nav">${fchipsR}</div>${resBody}<div class="boton-fila mt8"><button class="boton dorado pequeno" data-accion="demo-resultados">Resultados de ejemplo</button> <button class="boton secundario pequeno" data-accion="borrar-resultados">Borrar resultados</button></div></div>
+    ${addCard}
     <div class="tarjeta"><div class="tarjeta-titulo">🔄 Fixture oficial</div>
-      <p class="texto-mini">Recarga los 72 partidos oficiales del Mundial 2026. No borra los pronósticos ya hechos.</p>
+      <p class="texto-mini">Recarga los 72 partidos oficiales del Mundial 2026. No borra los pronósticos.</p>
       <div class="mt8"><button class="boton secundario" data-accion="re-sembrar">🔄 Re-cargar fixture oficial</button></div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">🏁 Resultado final del Mundial</div>
-      <div class="fila-campos"><div class="campo"><label>Campeón</label><select data-accion="final-real" data-tipo="campeon">${opts(estado.resultadoFinal.campeon)}</select></div>
-        <div class="campo"><label>Subcampeón</label><select data-accion="final-real" data-tipo="subcampeon">${opts(estado.resultadoFinal.subcampeon)}</select></div></div></div>
     <div class="tarjeta"><div class="tarjeta-titulo">⚙️ Configuración</div>
       <div class="campo"><label>Nombre de la polla</label><input type="text" value="${escapar(cfg.nombrePolla)}" data-accion="cfg" data-campo="nombrePolla"></div>
       <div class="fila-campos"><div class="campo"><label>Código de invitación</label><input type="text" value="${escapar(cfg.codigoInvitacion)}" data-accion="cfg" data-campo="codigoInvitacion"></div>
-        <div class="campo"><label>Premio por jugador (${escapar(cfg.moneda)})</label><input type="number" min="0" step="0.5" value="${cfg.montoApuesta}" data-accion="cfg" data-campo="montoApuesta"></div></div>
-      <div class="fila-campos"><div class="campo"><label>Puntos por acierto</label><input type="number" min="0" value="${cfg.puntos.acierto}" data-accion="cfg-pts" data-campo="acierto"></div>
-        <div class="campo"><label>Puntos campeón</label><input type="number" min="0" value="${cfg.puntos.campeon}" data-accion="cfg-pts" data-campo="campeon"></div>
-        <div class="campo"><label>Puntos subcampeón</label><input type="number" min="0" value="${cfg.puntos.subcampeon}" data-accion="cfg-pts" data-campo="subcampeon"></div></div></div>
+        <div class="campo"><label>Puntos por acierto</label><input type="number" min="1" value="${cfg.puntos.acierto}" data-accion="cfg-pts" data-campo="acierto"></div></div></div>
     <div class="tarjeta"><div class="tarjeta-titulo">👥 Jugadores</div>
       <ul class="lista-jug">${estado.jugadores.map(j => `<li><div class="avatar" style="background:${j.color}">${escapar(j.nombre.charAt(0))}</div>
         <span class="nombre">${escapar(j.nombre)} ${j.esOrganizador ? '<span class="chip grupo">organizador</span>' : ''}</span>
@@ -423,8 +464,7 @@ function actualizarCountdown() {
 const TABS = [
   { id: 'inicio', ico: '🏠', txt: 'Inicio' }, { id: 'calendario', ico: '📅', txt: 'Calendario', m: 'Agenda' },
   { id: 'partidos', ico: '⚽', txt: 'Partidos' }, { id: 'posiciones', ico: '🏅', txt: 'Posiciones', m: 'Tabla' },
-  { id: 'final', ico: '🏆', txt: 'Fase final', m: 'Final' }, { id: 'bote', ico: '💰', txt: 'Premio' },
-  { id: 'admin', ico: '🛠️', txt: 'Organizador', m: 'Admin' },
+  { id: 'bote', ico: '💰', txt: 'Premio' }, { id: 'admin', ico: '🛠️', txt: 'Organizador', m: 'Admin' },
 ];
 
 function render() {
@@ -462,6 +502,8 @@ document.addEventListener('click', (e) => {
     case 'ir': estado.vista = el.dataset.vista; render(); break;
     case 'filtro-cal': filtroCal = el.dataset.filtro; render(); break;
     case 'grupo': grupoSel = el.dataset.g; render(); break;
+    case 'fase': faseSel = el.dataset.f; grupoSel = null; render(); break;
+    case 'fase-tabla': faseTabla = el.dataset.f; render(); break;
     case 'salir': Auth.salir(); break;
 
     case 'pred': {  // el jugador toca L / E / V (solo fija; no quita)
@@ -526,8 +568,29 @@ document.addEventListener('click', (e) => {
     case 're-sembrar':
       if (!esOrganizador()) return;
       if (confirm('¿Re-cargar los 72 partidos oficiales? No borra los pronósticos.')) {
-        Promise.resolve(Datos.reSembrarPartidos()).then(() => { estado.vista = 'partidos'; render(); }).catch(err => console.warn(err));
+        Promise.resolve(Datos.reSembrarPartidos()).then(() => { estado.vista = 'partidos'; faseSel = 'grupos'; render(); }).catch(err => console.warn(err));
       }
+      break;
+    case 'fase-toggle': {
+      if (!esOrganizador()) return;
+      const f = faseInfo(el.dataset.f); f.abierta = !f.abierta;
+      sync(Datos.guardarConfig()); render(); break;
+    }
+    case 'agregar-partido': {
+      if (!esOrganizador()) return;
+      const fase = document.getElementById('add-fase').value;
+      const ronda = (document.getElementById('add-ronda').value || '').trim();
+      const local = document.getElementById('add-local').value;
+      const visita = document.getElementById('add-visita').value;
+      const fechaIn = document.getElementById('add-fecha').value;
+      if (!local || !visita || local === visita) { alert('Elige local y visitante (distintos).'); return; }
+      const p = { id: 'k' + Date.now().toString(36), orden: 1000 + estado.partidos.length, grupo: null, fase, ronda: ronda || faseInfo(fase).nombre, local, visita, fecha: fechaIn || '', estadio: '', jugado: false, resultado: null, golesLocal: null, golesVisita: null };
+      Promise.resolve(Datos.crearPartido(p)).then(() => { faseSel = fase; render(); }).catch(err => console.warn(err));
+      break;
+    }
+    case 'quitar-partido':
+      if (!esOrganizador()) return;
+      if (confirm('¿Quitar este partido y sus pronósticos?')) { sync(Datos.eliminarPartido(el.dataset.partido)); render(); }
       break;
   }
 });
@@ -557,6 +620,11 @@ document.addEventListener('change', (e) => {
     case 'cfg-pts':
       if (!esOrganizador()) return;
       estado.config.puntos[el.dataset.campo] = parseInt(el.value, 10) || 0; sync(Datos.guardarConfig()); break;
+    case 'fase-monto': {
+      if (!esOrganizador()) return;
+      const f = faseInfo(el.dataset.f); f.monto = parseFloat(el.value) || 0;
+      sync(Datos.guardarConfig()); break;
+    }
   }
 });
 

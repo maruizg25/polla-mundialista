@@ -78,22 +78,22 @@ const Datos = (function () {
   const montoCuota = () => (est && est.config ? est.config.montoApuesta : 0);
   const aFilaJugador = j => ({ id: j.id, nombre: j.nombre, color: j.color, abonado: j.abonado || 0, pago: (j.abonado || 0) >= montoCuota(), es_organizador: !!j.esOrganizador, pin: j.pin || '' });
   const deFilaJugador = r => ({ id: r.id, nombre: r.nombre, color: r.color, abonado: r.abonado || 0, esOrganizador: !!r.es_organizador, pin: r.pin || '' });
-  const aFilaPartido = p => ({ id: p.id, orden: p.orden, grupo: p.grupo, fase: p.fase, local: p.local, visita: p.visita, fecha: p.fecha, estadio: p.estadio, jugado: !!p.jugado, resultado: p.resultado || null, goles_local: p.golesLocal, goles_visita: p.golesVisita });
-  const deFilaPartido = r => ({ id: r.id, orden: r.orden, grupo: r.grupo, fase: r.fase, local: r.local, visita: r.visita, fecha: r.fecha, estadio: r.estadio, jugado: !!r.jugado, resultado: r.resultado || null, golesLocal: r.goles_local, golesVisita: r.goles_visita });
+  const aFilaPartido = p => ({ id: p.id, orden: p.orden, grupo: p.grupo, fase: p.fase, ronda: p.ronda || null, local: p.local, visita: p.visita, fecha: p.fecha, estadio: p.estadio, jugado: !!p.jugado, resultado: p.resultado || null, goles_local: p.golesLocal, goles_visita: p.golesVisita });
+  const deFilaPartido = r => ({ id: r.id, orden: r.orden, grupo: r.grupo, fase: r.fase, ronda: r.ronda || null, local: r.local, visita: r.visita, fecha: r.fecha, estadio: r.estadio, jugado: !!r.jugado, resultado: r.resultado || null, golesLocal: r.goles_local, golesVisita: r.goles_visita });
 
   async function cargarOnline() {
     // 1) CONFIG (fila única id=1); si no existe, la creamos.
     let { data: cfgRow } = await sb.from('config').select('*').eq('id', 1).maybeSingle();
     if (!cfgRow) {
       const c = CONFIG_DEFAULT;
-      await sb.from('config').upsert({ id: 1, nombre: c.nombrePolla, codigo: c.codigoInvitacion, moneda: c.moneda, monto: c.montoApuesta, monto_partido: c.montoPartido, puntos: c.puntos, campeon_real: null, subcampeon_real: null });
+      await sb.from('config').upsert({ id: 1, nombre: c.nombrePolla, codigo: c.codigoInvitacion, moneda: c.moneda, monto: c.montoApuesta, puntos: c.puntos, fases: c.fases, campeon_real: null, subcampeon_real: null });
       ({ data: cfgRow } = await sb.from('config').select('*').eq('id', 1).maybeSingle());
     }
     const config = {
       nombrePolla: cfgRow.nombre, codigoInvitacion: cfgRow.codigo, moneda: cfgRow.moneda,
       montoApuesta: cfgRow.monto,
-      montoPartido: (cfgRow.monto_partido != null ? cfgRow.monto_partido : CONFIG_DEFAULT.montoPartido),
       puntos: cfgRow.puntos || CONFIG_DEFAULT.puntos,
+      fases: (cfgRow.fases && cfgRow.fases.length) ? cfgRow.fases : JSON.parse(JSON.stringify(CONFIG_DEFAULT.fases)),
     };
     const resultadoFinal = { campeon: cfgRow.campeon_real || null, subcampeon: cfgRow.subcampeon_real || null };
 
@@ -229,12 +229,25 @@ const Datos = (function () {
       await sb.from('partidos').update(aFilaPartido(p)).eq('id', partidoId);
     },
 
+    // Crear un partido (p. ej. de eliminatoria) — lo agrega el organizador.
+    async crearPartido(p) {
+      if (!est.partidos.find(x => x.id === p.id)) est.partidos.push(p);
+      if (!MODO_ONLINE) return guardarLocal();
+      await sb.from('partidos').upsert(aFilaPartido(p));
+    },
+    async eliminarPartido(id) {
+      est.partidos = est.partidos.filter(x => x.id !== id);
+      if (!MODO_ONLINE) return guardarLocal();
+      await sb.from('predicciones').delete().eq('partido_id', id);
+      await sb.from('partidos').delete().eq('id', id);
+    },
+
     async guardarConfig() {
       const c = est.config, rf = est.resultadoFinal;
       if (!MODO_ONLINE) return guardarLocal();
       await sb.from('config').update({
         nombre: c.nombrePolla, codigo: c.codigoInvitacion, moneda: c.moneda,
-        monto: c.montoApuesta, puntos: c.puntos,
+        monto: c.montoApuesta, puntos: c.puntos, fases: c.fases,
         campeon_real: rf.campeon, subcampeon_real: rf.subcampeon,
       }).eq('id', 1);
     },

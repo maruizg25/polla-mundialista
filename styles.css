@@ -175,6 +175,21 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
 .partido.compacto .partido-cab { margin-bottom: 8px; }
 .partido.compacto .pred-btn { padding: 11px 8px; }
 
+/* Selector de fases (Grupos / Eliminatorias / Final) */
+.fases-nav { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 12px; -webkit-overflow-scrolling: touch; }
+.fchip { flex: 0 0 auto; border: 2px solid var(--linea); background: var(--blanco); border-radius: 999px; padding: 8px 16px; font-weight: 800; font-size: .88rem; cursor: pointer; font-family: inherit; color: var(--gris); white-space: nowrap; }
+.fchip.sel { background: var(--azul); color: var(--blanco); border-color: var(--azul); }
+.fchip.cerrada { opacity: .65; }
+
+/* Fila de fase en el panel del organizador */
+.fase-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--linea); flex-wrap: wrap; }
+.fase-fila:last-child { border-bottom: none; }
+.fase-acc { display: flex; align-items: center; gap: 10px; }
+.fase-acc input { border: 2px solid var(--linea); border-radius: 8px; padding: 5px 6px; font-family: inherit; }
+
+/* Pronóstico de eliminatoria (2 opciones: quién avanza) */
+.pred-1x2.dos { grid-template-columns: 1fr 1fr; }
+
 .pred-quitar { text-align: center; margin-top: 10px; }
 .link-quitar { background: none; border: none; color: var(--gris); font-size: .82rem; font-weight: 600; cursor: pointer; font-family: inherit; text-decoration: underline; padding: 4px; }
 .link-quitar:hover { color: var(--rojo); }

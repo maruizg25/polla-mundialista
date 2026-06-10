@@ -16,6 +16,7 @@ create table if not exists config (
   monto         int,
   monto_partido int default 2,
   puntos        jsonb,
+  fases         jsonb,
   campeon_real  text,
   subcampeon_real text
 );
@@ -36,11 +37,13 @@ create table if not exists partidos (
   orden        int,
   grupo        text,
   fase         text,
+  ronda        text,
   local        text,
   visita       text,
   fecha        text,
   estadio      text,
   jugado       boolean default false,
+  resultado    text,
   goles_local  int,
   goles_visita int
 );
@@ -48,6 +51,7 @@ create table if not exists partidos (
 create table if not exists predicciones (
   jugador_id uuid references jugadores(id) on delete cascade,
   partido_id text references partidos(id) on delete cascade,
+  resultado  text,
   local      int,
   visita     int,
   primary key (jugador_id, partido_id)
