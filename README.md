@@ -21,6 +21,7 @@ y elige un jugador. ¡Listo!
 Sigue la **[GUIA-PUBLICAR.md](GUIA-PUBLICAR.md)** — son ~10 minutos: crear una
 base de datos gratis en Supabase y subir la carpeta a Netlify. Te da un enlace
 para compartir por WhatsApp.
+- Si un correo ya fue confirmado antes y vuelves a ver usuarios repetidos, ejecuta [supabase-auth-limpiar-duplicados.sql](supabase-auth-limpiar-duplicados.sql) en el SQL Editor de Supabase para limpiar Auth y las tablas de la polla.
 
 ## 🎮 Cómo se juega
 1. **Entrar:** código de invitación del grupo → eliges/creas tu jugador (con un PIN personal opcional).
