@@ -320,7 +320,7 @@ function detalleEspn(ev) {
     minute: '2-digit',
     timeZone: TZ_EC,
   }).format(d);
-  return txt.charAt(0).toUpperCase() + txt.slice(1) + ' · Quito, Ecuador';
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
 }
 
 function resumenEspn(ev) {
