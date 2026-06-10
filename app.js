@@ -411,10 +411,10 @@ function actualizarCountdown() {
    RENDER + ENCABEZADO + NAVEGACIÓN
    ---------------------------------------------------------------- */
 const TABS = [
-  { id: 'inicio', ico: '🏠', txt: 'Inicio' }, { id: 'calendario', ico: '📅', txt: 'Calendario' },
-  { id: 'partidos', ico: '⚽', txt: 'Partidos' }, { id: 'posiciones', ico: '🏅', txt: 'Posiciones' },
-  { id: 'final', ico: '🏆', txt: 'Fase final' }, { id: 'bote', ico: '💰', txt: 'Premio' },
-  { id: 'admin', ico: '🛠️', txt: 'Organizador' },
+  { id: 'inicio', ico: '🏠', txt: 'Inicio' }, { id: 'calendario', ico: '📅', txt: 'Calendario', m: 'Agenda' },
+  { id: 'partidos', ico: '⚽', txt: 'Partidos' }, { id: 'posiciones', ico: '🏅', txt: 'Posiciones', m: 'Tabla' },
+  { id: 'final', ico: '🏆', txt: 'Fase final', m: 'Final' }, { id: 'bote', ico: '💰', txt: 'Premio' },
+  { id: 'admin', ico: '🛠️', txt: 'Organizador', m: 'Admin' },
 ];
 
 function render() {
@@ -426,7 +426,7 @@ function render() {
   document.getElementById('usuario-chip').innerHTML = `<span class="avatar mini" style="background:${yo.color}">${escapar(yo.nombre.charAt(0))}</span><span>${escapar(yo.nombre)}</span>`;
 
   const tabs = TABS.filter(t => t.id !== 'admin' || esOrganizador());
-  document.getElementById('nav-inner').innerHTML = tabs.map(t => `<button data-accion="ir" data-vista="${t.id}" class="${estado.vista === t.id ? 'activa' : ''}"><span class="ico">${t.ico}</span><span>${t.txt}</span></button>`).join('');
+  document.getElementById('nav-inner').innerHTML = tabs.map(t => `<button data-accion="ir" data-vista="${t.id}" class="${estado.vista === t.id ? 'activa' : ''}"><span class="ico">${t.ico}</span><span class="t-full">${t.txt}</span><span class="t-corto">${t.m || t.txt}</span></button>`).join('');
 
   if (estado.vista === 'admin' && !esOrganizador()) estado.vista = 'inicio';
   document.getElementById('contenido').innerHTML = (VISTAS[estado.vista] || vistaInicio)();

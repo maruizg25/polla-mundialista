@@ -308,3 +308,29 @@ main { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
   .pick-final { grid-template-columns: 1fr; }
   .bote-hero .monto { font-size: 2rem; }
 }
+
+/* Etiquetas de pestañas: completa en escritorio, corta en móvil */
+.t-corto { display: none; }
+
+/* ===== Optimización MÓVIL (la mayoría juega desde el celular) ===== */
+@media (max-width: 640px) {
+  main { padding: 16px 12px 44px; }
+  .titulo-vista { font-size: 1.22rem; }
+  .logo { font-size: 1.04rem; }
+
+  /* Barra inferior: que quepan TODAS las pestañas sin cortarse */
+  .nav-inner { overflow-x: hidden; }
+  .nav button { font-size: .64rem; padding: 7px 1px 5px; min-width: 0; gap: 1px; }
+  .nav button .ico { font-size: 1.2rem; }
+  .nav button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-full { display: none; }
+  .t-corto { display: inline; }
+
+  /* Pronóstico 1X2: botones cómodos para el pulgar */
+  .pred-1x2 { gap: 6px; }
+  .pred-btn { font-size: .8rem; padding: 12px 6px; border-radius: 11px; min-height: 58px; }
+
+  /* Resultados del organizador: cada opción en su fila (más clara al tacto) */
+  .admin-res-btns { flex-direction: column; }
+  .admin-res-btns .res-btn2 { width: 100%; text-align: center; }
+}
