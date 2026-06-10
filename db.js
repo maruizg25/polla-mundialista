@@ -87,7 +87,7 @@ const Datos = (function () {
     let { data: cfgRow } = await sb.from('config').select('*').eq('id', 1).maybeSingle();
     if (!cfgRow) {
       const c = CONFIG_DEFAULT;
-      await sb.from('config').upsert({ id: 1, nombre: c.nombrePolla, codigo: c.codigoInvitacion, moneda: c.moneda, monto: c.montoApuesta, puntos: c.puntos, fases: c.fases, campeon_real: null, subcampeon_real: null });
+      await sb.from('config').upsert({ id: 1, nombre: c.nombrePolla, codigo: c.codigoInvitacion, moneda: c.moneda, monto: c.montoApuesta, puntos: c.puntos, fases: c.fases, pronosticos_cerrados: !!c.pronosticosCerrados, campeon_real: null, subcampeon_real: null });
       ({ data: cfgRow } = await sb.from('config').select('*').eq('id', 1).maybeSingle());
     }
     const config = {
@@ -95,6 +95,7 @@ const Datos = (function () {
       montoApuesta: cfgRow.monto,
       organizadorEmail: CONFIG_DEFAULT.organizadorEmail,   // fijo desde el código
       puntos: cfgRow.puntos || CONFIG_DEFAULT.puntos,
+      pronosticosCerrados: !!cfgRow.pronosticos_cerrados,
       fases: (cfgRow.fases && cfgRow.fases.length) ? cfgRow.fases : JSON.parse(JSON.stringify(CONFIG_DEFAULT.fases)),
     };
     const resultadoFinal = { campeon: cfgRow.campeon_real || null, subcampeon: cfgRow.subcampeon_real || null };
@@ -255,6 +256,7 @@ const Datos = (function () {
       await sb.from('config').update({
         nombre: c.nombrePolla, codigo: c.codigoInvitacion, moneda: c.moneda,
         monto: c.montoApuesta, puntos: c.puntos, fases: c.fases,
+        pronosticos_cerrados: !!c.pronosticosCerrados,
         campeon_real: rf.campeon, subcampeon_real: rf.subcampeon,
       }).eq('id', 1);
     },
@@ -277,7 +279,7 @@ const Datos = (function () {
     /* ---- AUTENTICACIÓN (Supabase Auth: correo + contraseña) ---- */
     async authSesion() { if (!sb) return null; const { data } = await sb.auth.getSession(); return data.session; },
     async authLogin(email, password) { return await sb.auth.signInWithPassword({ email, password }); },
-    async authRegistrar(email, password, nombre) { return await sb.auth.signUp({ email, password, options: { data: { nombre }, emailRedirectTo: window.location.origin } }); },
+    async authRegistrar(email, password, nombre, apellidos) { return await sb.auth.signUp({ email, password, options: { data: { nombre, apellidos, nombre_completo: `${nombre} ${apellidos}`.trim() }, emailRedirectTo: window.location.origin } }); },
     async authReset(email) { return await sb.auth.resetPasswordForEmail(email); },
     async authSalir() { if (sb) await sb.auth.signOut(); },
     onAuth(cb) { if (sb) sb.auth.onAuthStateChange((_evt, session) => cb(session)); },
@@ -300,6 +302,22 @@ const Datos = (function () {
       await sb.from('partidos').upsert(PARTIDOS_SEMILLA.map(aFilaPartido));
       await cargarOnline();
       return est.partidos.length;
+    },
+
+    async vaciarJugadores() {
+      const ids = (est.jugadores || []).map(j => j.id).filter(Boolean);
+      est.jugadores = [];
+      est.predicciones = {};
+      est.apuestas = {};
+      est.bloqueados = [];
+      if (!MODO_ONLINE) { guardarLocal(); return 0; }
+      if (ids.length) {
+        await sb.from('predicciones').delete().in('jugador_id', ids);
+        await sb.from('picks_final').delete().in('jugador_id', ids);
+        await sb.from('apuestas').delete().in('jugador_id', ids);
+        await sb.from('jugadores').delete().in('id', ids);
+      }
+      return ids.length;
     },
   };
 })();

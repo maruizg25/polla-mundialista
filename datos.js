@@ -154,28 +154,23 @@ const PARTIDOS_SEMILLA = [
 
 /* --- JUGADORES DE EJEMPLO (solo modo local de prueba) ------- */
 // abonado = cuánto ha pagado de su cuota del bote general (de a poco).
-const JUGADORES_SEMILLA = [
-  { id: 'u1', nombre: 'Mauricio', color: '#0540A6', abonado: 10, esOrganizador: true,  pin: '' },
-  { id: 'u2', nombre: 'Carlos',   color: '#E4002B', abonado: 5,  esOrganizador: false, pin: '' },
-  { id: 'u3', nombre: 'Ana',      color: '#E6A700', abonado: 10, esOrganizador: false, pin: '' },
-  { id: 'u4', nombre: 'Diego',    color: '#0A8754', abonado: 0,  esOrganizador: false, pin: '' },
-  { id: 'u5', nombre: 'Laura',    color: '#7c3aed', abonado: 10, esOrganizador: false, pin: '' },
-];
+const JUGADORES_SEMILLA = [];
 
 /* --- CONFIGURACIÓN POR DEFECTO ------------------------------ */
 const CONFIG_DEFAULT = {
   nombrePolla: 'Polla Mundialista 2026',
   codigoInvitacion: 'ECUADOR26',
   moneda: 'USD',
-  montoApuesta: 1,    // (legado) compatibilidad
+  montoApuesta: 5,
   // Este correo SIEMPRE es organizador (el dueño de la polla), sin importar
   // el orden de registro. Cámbialo si lo administra otra persona.
   organizadorEmail: 'jhonamaru72@gmail.com',
   puntos: { acierto: 1 },   // 1 punto por acertar el resultado
+  pronosticosCerrados: false,
   // Las 3 fases. El organizador abre/cierra cada una y define su premio (bote).
   fases: [
-    { id: 'grupos',        nombre: 'Fase de grupos', abierta: true,  monto: 1 },
-    { id: 'eliminatorias', nombre: 'Eliminatorias',  abierta: false, monto: 1 },
-    { id: 'final',         nombre: 'Final',          abierta: false, monto: 1 },
+    { id: 'grupos',        nombre: 'Fase de grupos', abierta: true,  monto: 5 },
+    { id: 'eliminatorias', nombre: 'Eliminatorias',  abierta: false, monto: 5 },
+    { id: 'final',         nombre: 'Final',          abierta: false, monto: 0 },
   ],
 };

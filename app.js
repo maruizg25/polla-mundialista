@@ -15,14 +15,26 @@ let estado = {
   predicciones: {},   // predicciones[jugadorId].partidos[partidoId] = 'L' | 'E' | 'V'
   bloqueados: [],     // correos de jugadores quitados (no pueden volver a entrar)
   resultadoFinal: { campeon: null, subcampeon: null },
+  espn: { loading: false, error: null, eventos: [], lastFetch: 0 },
   usuarioActual: null,
   vista: 'inicio',
 };
 let filtroCal = 'todos';
 let cdInterval = null;
+let liveInterval = null;
+let espnBgInterval = null;
 let grupoSel = null;   // grupo seleccionado en Partidos / Organizador (navegación por grupo)
 let faseSel = 'grupos';   // fase seleccionada (grupos | eliminatorias | final)
 let faseTabla = 'total';  // fase seleccionada en Posiciones (total | grupos | ...)
+const ESPN_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard';
+const ESPN_MUNDIAL_EQUIPOS = new Set([
+  'mexico', 'south africa', 'south korea', 'czechia', 'czech republic', 'canada', 'bosnia and herzegovina', 'qatar', 'switzerland',
+  'brazil', 'morocco', 'haiti', 'scotland', 'united states', 'paraguay', 'australia', 'turkey', 'germany', 'curacao',
+  'cote d ivoire', 'ivory coast', 'ecuador', 'netherlands', 'japan', 'sweden', 'tunisia', 'belgium', 'egypt', 'iran',
+  'new zealand', 'spain', 'cape verde', 'saudi arabia', 'uruguay', 'france', 'senegal', 'iraq', 'norway', 'argentina',
+  'algeria', 'austria', 'jordan', 'portugal', 'dr congo', 'congo dr', 'uzbekistan', 'colombia', 'england', 'croatia',
+  'ghana', 'panama'
+]);
 
 /* --- Fases --- */
 function fasesCfg() { return estado.config.fases || []; }
@@ -66,14 +78,33 @@ function diaKey(d) { return new Intl.DateTimeFormat('en-CA', { year: 'numeric', 
 function diaLargo(d) { const s = new Intl.DateTimeFormat('es-EC', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ_EC }).format(d); return s.charAt(0).toUpperCase() + s.slice(1); }
 function partidoBloqueado(p) {
   if (p.jugado) return true;
+  if (estado.config.pronosticosCerrados) return true;
   if (!faseAbierta(p.fase || 'grupos')) return true;   // fase cerrada: no se pronostica
   const inicio = fechaEc(p.fecha);
   return !isNaN(inicio) && inicio.getTime() <= Date.now();
 }
+function primerPartidoInicio() {
+  const partidos = estado.partidos.map(p => fechaEc(p.fecha)).filter(d => !isNaN(d)).sort((a, b) => a - b);
+  return partidos[0] || null;
+}
+function edicionCerrada() {
+  const primero = primerPartidoInicio();
+  return !!(primero && primero.getTime() <= Date.now());
+}
+function puedeEditarJugadores() { return !edicionCerrada(); }
 function escapar(t) {
   return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function sync(promesa) { if (promesa && promesa.catch) promesa.catch(e => console.warn('No se pudo guardar:', e)); }
+function normalizarTexto(t) {
+  return String(t || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 /* ----------------------------------------------------------------
    UX DIVERTIDA (progreso, chispas, confeti, avisos)
@@ -152,13 +183,290 @@ function tablaPosiciones(faseId) {
 }
 function posicionDe(jugadorId) { return tablaPosiciones().findIndex(x => x.jugador.id === jugadorId) + 1; }
 function premioBote() { return (estado.config.montoApuesta || 0) * estado.jugadores.length; }
-function premioFase(faseId) { return (faseInfo(faseId).monto || 0) * estado.jugadores.length; }
-function premioTotal() { return fasesCfg().reduce((s, f) => s + (f.monto || 0), 0) * estado.jugadores.length; }
+function premioFase(faseId) { return faseAbierta(faseId) ? (faseInfo(faseId).monto || 0) * estado.jugadores.length : 0; }
+function premioTotal() { return fasesCfg().reduce((s, f) => s + premioFase(f.id), 0); }
+function formatearMontoBase() {
+  const fases = fasesCfg();
+  const todosIguales = fases.length > 0 && fases.every(f => (f.id === 'final' ? (f.monto == null || f.monto === 0) : (f.monto == null || f.monto === 1)));
+  let cambio = false;
+  if (todosIguales) fases.forEach(f => { f.monto = (f.id === 'final' ? 0 : 5); });
+  if (todosIguales) cambio = true;
+  if (!estado.config.montoApuesta || estado.config.montoApuesta === 1) { estado.config.montoApuesta = 5; cambio = true; }
+  return cambio;
+}
+
+function codigoEspnEquipo(c) {
+  return normalizarTexto(c?.team?.abbreviation || c?.team?.shortDisplayName || c?.team?.displayName || '');
+}
+
+function partidoDesdeEspn(ev) {
+  const comps = ev?.competitions?.[0]?.competitors || [];
+  if (comps.length < 2) return null;
+  const codigos = comps.map(c => codigoEspnEquipo(c)).filter(Boolean);
+  const fechaEv = new Date(ev?.date || ev?.competitions?.[0]?.date || 0).getTime();
+  return estado.partidos.find(p => {
+    const fechaPartido = fechaEc(p.fecha).getTime();
+    if (Math.abs(fechaPartido - fechaEv) > 1000 * 60 * 60 * 24) return false;
+    const a = normalizarTexto(p.local);
+    const b = normalizarTexto(p.visita);
+    return codigos.includes(a) && codigos.includes(b);
+  }) || null;
+}
+
+function resultadoDesdeEspn(ev, partido) {
+  const comps = ev?.competitions?.[0]?.competitors || [];
+  const home = comps.find(c => c.homeAway === 'home') || comps[0] || null;
+  const away = comps.find(c => c.homeAway === 'away') || comps[1] || null;
+  if (!home || !away) return null;
+  const homeCode = codigoEspnEquipo(home);
+  const localCode = normalizarTexto(partido.local);
+  const localScore = homeCode === localCode ? parseInt(home.score || '0', 10) : parseInt(away.score || '0', 10);
+  const visitaScore = homeCode === localCode ? parseInt(away.score || '0', 10) : parseInt(home.score || '0', 10);
+  if (Number.isNaN(localScore) || Number.isNaN(visitaScore)) return null;
+  if (localScore === visitaScore) return 'E';
+  return localScore > visitaScore ? 'L' : 'V';
+}
+
+function actualizarResultadosDesdeESPN(eventos) {
+  let cambio = false;
+  (eventos || []).forEach(ev => {
+    const partido = partidoDesdeEspn(ev);
+    if (!partido) return;
+    const tipo = ev?.status?.type || {};
+    const finalizado = tipo.completed || tipo.state === 'post';
+    const enJuego = tipo.state === 'in';
+    if (!finalizado && !enJuego) return;
+    const resultado = finalizado ? resultadoDesdeEspn(ev, partido) : null;
+    if (!resultado) return;
+    if (partido.resultado !== resultado || !partido.jugado) {
+      partido.resultado = resultado;
+      partido.jugado = true;
+      cambio = true;
+    }
+  });
+  if (cambio) {
+    estado.partidos.filter(p => p.jugado).forEach(p => sync(Datos.guardarPartido(p.id)));
+  }
+  return cambio;
+}
 
 /* ----------------------------------------------------------------
    VISTAS
    ---------------------------------------------------------------- */
-const VISTAS = { inicio: vistaInicio, calendario: vistaCalendario, partidos: vistaPartidos, posiciones: vistaPosiciones, bote: vistaBote, admin: vistaAdmin };
+const VISTAS = { inicio: vistaInicio, calendario: vistaCalendario, partidos: vistaPartidos, resumen: vistaResumen, posiciones: vistaPosiciones, bote: vistaBote, 'en-vivo': vistaEnVivo, admin: vistaAdmin };
+
+function esEventoMundial(ev) {
+  const texto = normalizarTexto(JSON.stringify(ev));
+  if (texto.includes('world cup') || texto.includes('fifa world cup')) return true;
+  const comps = ev?.competitions?.[0]?.competitors || [];
+  return comps.some(c => ESPN_MUNDIAL_EQUIPOS.has(normalizarTexto(c?.team?.displayName)));
+}
+
+function competidoresEspn(ev) {
+  const comps = ev?.competitions?.[0]?.competitors || [];
+  const home = comps.find(c => c.homeAway === 'home') || comps[0] || null;
+  const away = comps.find(c => c.homeAway === 'away') || comps[1] || null;
+  return { home, away };
+}
+
+function estadoEspn(ev) {
+  const tipo = ev?.status?.type || {};
+  if (tipo.state === 'in') return ev?.status?.displayClock ? `En vivo · ${ev.status.displayClock}` : 'En vivo';
+  if (tipo.state === 'post') return 'Finalizado';
+  return tipo.detail || 'Programado';
+}
+
+function detalleEspn(ev) {
+  const d = new Date(ev?.date || ev?.competitions?.[0]?.date || Date.now());
+  if (isNaN(d)) return '';
+  const txt = new Intl.DateTimeFormat('es-EC', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: TZ_EC,
+  }).format(d);
+  return txt.charAt(0).toUpperCase() + txt.slice(1) + ' · Quito, Ecuador';
+}
+
+function enlaceEspn(ev) {
+  return ev?.links?.find(l => (l.rel || []).includes('desktop'))?.href || ev?.links?.[0]?.href || ESPN_SCOREBOARD_URL;
+}
+
+function resumenEspn(ev) {
+  const { home, away } = competidoresEspn(ev);
+  if (!home || !away) return '';
+  const homeName = home.team?.displayName || 'Local';
+  const awayName = away.team?.displayName || 'Visitante';
+  const state = ev?.status?.type?.state || 'pre';
+  const chip = state === 'in' ? 'live' : (state === 'post' ? 'jugado' : 'grupo');
+  return `<div class="live-card">
+      <div class="live-top"><span class="chip ${chip}">${estadoEspn(ev)}</span><span class="texto-mini">${escapar(detalleEspn(ev))}</span></div>
+      <div class="live-match">
+        <div class="live-team"><strong>${escapar(homeName)}</strong><span>${escapar(String(home.score ?? '0'))}</span></div>
+        <div class="live-center">${state === 'in' ? '⚽' : 'VS'}</div>
+        <div class="live-team visita"><span>${escapar(String(away.score ?? '0'))}</span><strong>${escapar(awayName)}</strong></div>
+      </div>
+      <div class="live-meta">${escapar(ev?.competitions?.[0]?.venue?.fullName || 'Sin estadio')}${ev?.shortName ? ` · ${escapar(ev.shortName)}` : ''}</div>
+      <div class="mt8"><a class="boton secundario pequeno" href="${escapar(enlaceEspn(ev))}" target="_blank" rel="noreferrer">Abrir en ESPN</a></div>
+    </div>`;
+}
+
+async function cargarESPNEnVivo() {
+  if (estado.espn.loading) return;
+  estado.espn.loading = true;
+  estado.espn.error = null;
+  if (estado.vista === 'en-vivo') render();
+  try {
+    const res = await fetch(ESPN_SCOREBOARD_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`ESPN respondió ${res.status}`);
+    const data = await res.json();
+    estado.espn.eventos = Array.isArray(data?.events) ? data.events : [];
+    estado.espn.lastFetch = Date.now();
+    actualizarResultadosDesdeESPN(estado.espn.eventos);
+  } catch (err) {
+    estado.espn.error = 'No se pudo cargar ESPN en este momento.';
+    console.warn('ESPN live error:', err);
+  } finally {
+    estado.espn.loading = false;
+    if (estado.vista === 'en-vivo') render();
+  }
+}
+
+function vistaEnVivo() {
+  const eventos = (estado.espn.eventos || []).filter(esEventoMundial);
+  const activos = eventos.filter(ev => ev?.status?.type?.state === 'in');
+  const proximos = eventos.filter(ev => ev?.status?.type?.state !== 'post').sort((a, b) => new Date(a?.date || 0).getTime() - new Date(b?.date || 0).getTime());
+  const proximoLocal = estado.partidos.slice().sort((a, b) => fechaEc(a.fecha) - fechaEc(b.fecha)).find(p => !partidoBloqueado(p));
+
+  let html = `<div class="titulo-vista">En vivo 📺</div>
+    <div class="subtitulo-vista">Seguimiento en tiempo real desde ESPN: marcador, estado y enlace al partido.</div>`;
+
+  if (estado.espn.loading && !eventos.length) {
+    html += `<div class="tarjeta"><p class="texto-mini centro" style="padding:18px">Cargando marcador de ESPN...</p></div>`;
+  } else if (estado.espn.error && !eventos.length) {
+    html += `<div class="aviso info"><span class="ico">⚠️</span><div>${escapar(estado.espn.error)}</div></div>`;
+  }
+
+  if (activos.length) {
+    html += `<div class="tarjeta"><div class="tarjeta-titulo">🔴 Ahora mismo</div>${activos.map(resumenEspn).join('')}</div>`;
+  }
+
+  if (proximos.length) {
+    html += `<div class="tarjeta"><div class="tarjeta-titulo">📡 Próximos partidos en ESPN</div>${proximos.slice(0, 3).map(resumenEspn).join('')}</div>`;
+  }
+
+  if (!activos.length && !proximos.length) {
+    html += `<div class="tarjeta">
+      <div class="tarjeta-titulo">Sin partido del Mundial en este momento</div>
+      <p class="texto-mini">Cuando ESPN publique el evento del Mundial para hoy, aparecerá aquí con marcador en vivo. Mientras tanto, puedes revisar el siguiente partido de tu fixture.</p>
+      ${proximoLocal ? `<div class="live-fallback">
+        <div class="live-top"><span class="chip grupo">Próximo del fixture</span><span class="texto-mini">${formatFecha(proximoLocal.fecha)}</span></div>
+        <div class="live-match">
+          <div class="live-team"><strong>${nombreEquipo(proximoLocal.local)}</strong></div>
+          <div class="live-center">VS</div>
+          <div class="live-team visita"><strong>${nombreEquipo(proximoLocal.visita)}</strong></div>
+        </div>
+        <div class="live-meta">Grupo ${proximoLocal.grupo} · ${proximoLocal.estadio || 'Sin estadio'}</div>
+        <div class="mt8"><button class="boton secundario pequeno" data-accion="ir" data-vista="calendario">Ver calendario</button></div>
+      </div>` : ''}
+    </div>`;
+  }
+
+  return html;
+}
+
+function respaldoPredicciones(jugadorId) {
+  const j = getJugador(jugadorId) || usuario();
+  const pr = (estado.predicciones[jugadorId] || { partidos: {}, campeon: null, subcampeon: null });
+  const partidos = estado.partidos.map(p => ({
+    id: p.id,
+    fase: p.fase,
+    grupo: p.grupo,
+    fecha: p.fecha,
+    local: nombreEquipo(p.local),
+    visita: nombreEquipo(p.visita),
+    pronostico: pr.partidos[p.id] || null,
+    resultado: p.resultado || null,
+  }));
+  return {
+    jugador: j ? { id: j.id, nombre: j.nombre, email: j.email || null } : null,
+    generadoEn: new Date().toISOString(),
+    pronosticosCerrados: !!estado.config.pronosticosCerrados,
+    partidos,
+    campeon: pr.campeon || null,
+    subcampeon: pr.subcampeon || null,
+  };
+}
+
+function descargarRespaldoPredicciones() {
+  const data = respaldoPredicciones(estado.usuarioActual);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `respaldo-pronosticos-${(usuario()?.nombre || 'jugador').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function copiarRespaldoPredicciones() {
+  const texto = JSON.stringify(respaldoPredicciones(estado.usuarioActual), null, 2);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(texto);
+    toast('Respaldo copiado al portapapeles', 'exito');
+  } else {
+    toast('Tu navegador no permite copiar automáticamente', '');
+  }
+}
+
+function vistaResumen() {
+  const yo = usuario();
+  const pr = estado.predicciones[yo.id] || { partidos: {} };
+  const abiertas = estado.partidos.filter(p => !partidoBloqueado(p));
+  const pronosticados = estado.partidos.filter(p => pr.partidos[p.id]);
+  const porcentaje = estado.partidos.length ? Math.round(pronosticados.length / estado.partidos.length * 100) : 0;
+  const grupos = {};
+  estado.partidos.forEach(p => { (grupos[p.fase || 'grupos'] = grupos[p.fase || 'grupos'] || []).push(p); });
+  const fases = fasesCfg().map(f => f.id).concat(Object.keys(grupos).filter(f => !fasesCfg().find(x => x.id === f)));
+
+  let html = `<div class="titulo-vista">Resumen de pronósticos</div>
+    <div class="subtitulo-vista">Revisa tus elecciones y descarga un respaldo antes de cerrar tu papeleta.</div>
+    <div class="resumen">
+      <div class="stat azul"><div class="ico-fondo">📝</div><div class="etq">Pronosticados</div><div class="val">${pronosticados.length}</div></div>
+      <div class="stat dorada"><div class="ico-fondo">📦</div><div class="etq">Respaldo</div><div class="val">${porcentaje}%</div></div>
+      <div class="stat roja"><div class="ico-fondo">🔒</div><div class="etq">Estado</div><div class="val">${estado.config.pronosticosCerrados ? 'Cerrado' : 'Abierto'}</div></div>
+    </div>`;
+
+  if (estado.config.pronosticosCerrados) {
+    html += `<div class="aviso demo"><span class="ico">🏁</span><div>Tu papeleta ya quedó congelada. No podrás modificarla y este resumen queda como respaldo.</div></div>`;
+  } else if (abiertas.length === 0) {
+    html += `<div class="aviso info"><span class="ico">⏳</span><div>Ya no tienes partidos abiertos. Puedes cerrar tus pronósticos desde el panel del organizador cuando toque.</div></div>`;
+  }
+
+  html += `<div class="tarjeta"><div class="tarjeta-titulo">Acciones</div>
+    <div class="boton-fila"><button class="boton" data-accion="respaldo-descargar">⬇️ Descargar respaldo</button><button class="boton secundario" data-accion="respaldo-copiar">📋 Copiar respaldo</button>${!estado.config.pronosticosCerrados ? '<button class="boton dorado" data-accion="ir" data-vista="partidos">Volver a editar</button>' : ''}</div>
+  </div>`;
+
+  fases.forEach(faseId => {
+    const lista = grupos[faseId] || [];
+    if (!lista.length) return;
+    html += `<div class="tarjeta"><div class="tarjeta-titulo">${escapar(faseInfo(faseId).nombre || faseId)}</div>`;
+    lista.sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach(p => {
+      const pred = pr.partidos[p.id] || null;
+      html += `<div class="resumen-pick">
+        <div class="resumen-pick-info"><strong>${escapar(nombreEquipo(p.local))}</strong> <span class="texto-mini">vs</span> <strong>${escapar(nombreEquipo(p.visita))}</strong><div class="texto-mini">${formatFecha(p.fecha)}</div></div>
+        <div class="resumen-pick-chip ${pred ? 'ok' : 'vacio'}">${pred ? textoResultado(p, pred) : 'Sin pronóstico'}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+
+  return html;
+}
 
 function vistaInicio() {
   const yo = usuario();
@@ -207,6 +515,11 @@ function vistaPartidos() {
       <div class="progreso-barra"><div class="progreso-fill" style="width:${pct}%"></div></div>
     </div>
     <div class="fases-nav">${fchips}</div>`;
+
+    if (pct === 100) {
+      html += `<div class="aviso demo"><span class="ico">🏁</span><div>Ya completaste tus 72 pronósticos. Puedes pasar al resumen y guardar un respaldo.</div></div>`;
+      html += `<div class="mt8 centro"><button class="boton" data-accion="ir" data-vista="resumen">Ver resumen y respaldo →</button></div>`;
+    }
 
   const f = faseInfo(faseSel);
   const partidosF = partidosDeFase(faseSel);
@@ -328,6 +641,7 @@ function vistaBote() {
 function vistaAdmin() {
   if (!esOrganizador()) return `<div class="titulo-vista">Panel del organizador</div><div class="aviso info"><span class="ico">🔒</span><div>Esta sección es solo para el organizador de la polla.</div></div>`;
   const cfg = estado.config;
+  const edicionBloqueada = edicionCerrada();
   const fases = fasesCfg();
   if (!fases.find(f => f.id === faseSel)) faseSel = 'grupos';
   const fAct = faseInfo(faseSel);
@@ -354,24 +668,22 @@ function vistaAdmin() {
   const addCard = `<div class="tarjeta"><div class="tarjeta-titulo">➕ Agregar partido (eliminatoria / final)</div><p class="texto-mini" style="margin-bottom:10px">Cuando se definan los equipos, agrégalos aquí. Se predice quién avanza.</p><div class="fila-campos"><div class="campo"><label>Fase</label><select id="add-fase"><option value="eliminatorias">Eliminatorias</option><option value="final">Final</option></select></div><div class="campo"><label>Ronda</label><input type="text" id="add-ronda" placeholder="Octavos, Cuartos, Semifinal…"></div></div><div class="fila-campos"><div class="campo"><label>Local</label><select id="add-local">${opts('')}</select></div><div class="campo"><label>Visitante</label><select id="add-visita">${opts('')}</select></div></div><div class="campo"><label>Fecha y hora (Ecuador)</label><input type="datetime-local" id="add-fecha"></div><button class="boton" data-accion="agregar-partido">➕ Agregar partido</button></div>`;
 
   return `<div class="titulo-vista">Panel del organizador 🛠️</div>
-    <div class="subtitulo-vista">Abre las fases, marca resultados y administra a los jugadores.</div>
+    <div class="subtitulo-vista">Abre las fases y marca resultados oficiales.</div>
+    ${edicionBloqueada ? '<div class="aviso info"><span class="ico">🔒</span><div>La edición de jugadores quedó cerrada porque ya inició el primer partido.</div></div>' : ''}
     ${fasesCard}
     <div class="tarjeta"><div class="tarjeta-titulo">⚽ Resultados</div><p class="texto-mini" style="margin-bottom:10px">Toca la bandera del <strong>${faseSel === 'grupos' ? 'ganador (o 🤝 empate)' : 'que avanza'}</strong>. Los puntos se calculan al instante.</p><div class="fases-nav">${fchipsR}</div>${resBody}<div class="boton-fila mt8"><button class="boton dorado pequeno" data-accion="demo-resultados">Resultados de ejemplo</button> <button class="boton secundario pequeno" data-accion="borrar-resultados">Borrar resultados</button></div></div>
     ${addCard}
     <div class="tarjeta"><div class="tarjeta-titulo">🔄 Fixture oficial</div>
       <p class="texto-mini">Recarga los 72 partidos oficiales del Mundial 2026. No borra los pronósticos.</p>
       <div class="mt8"><button class="boton secundario" data-accion="re-sembrar">🔄 Re-cargar fixture oficial</button></div></div>
+    <div class="tarjeta"><div class="tarjeta-titulo">🔒 Cierre de pronósticos</div>
+      <p class="texto-mini">Cuando ya estén listos los 72 pronósticos, congela la papeleta para que nadie pueda modificarla.</p>
+      <div class="mt8"><button class="boton ${cfg.pronosticosCerrados ? 'secundario' : 'dorado'}" data-accion="toggle-cierre-pronosticos">${cfg.pronosticosCerrados ? '🔓 Reabrir pronósticos' : '🔒 Cerrar pronósticos'}</button></div></div>
     <div class="tarjeta"><div class="tarjeta-titulo">⚙️ Configuración</div>
       <div class="campo"><label>Nombre de la polla</label><input type="text" value="${escapar(cfg.nombrePolla)}" data-accion="cfg" data-campo="nombrePolla"></div>
       <div class="fila-campos"><div class="campo"><label>Código de invitación</label><input type="text" value="${escapar(cfg.codigoInvitacion)}" data-accion="cfg" data-campo="codigoInvitacion"></div>
         <div class="campo"><label>Puntos por acierto</label><input type="number" min="1" value="${cfg.puntos.acierto}" data-accion="cfg-pts" data-campo="acierto"></div></div></div>
-    <div class="tarjeta"><div class="tarjeta-titulo">👥 Jugadores</div>
-      <ul class="lista-jug">${estado.jugadores.map(j => `<li><div class="avatar" style="background:${j.color}">${escapar(j.nombre.charAt(0))}</div>
-        <span class="nombre">${escapar(j.nombre)} ${j.esOrganizador ? '<span class="chip grupo">organizador</span>' : ''}</span>
-        ${!j.esOrganizador ? `<button class="boton secundario pequeno" data-accion="hacer-org" data-jug="${j.id}">Hacer organizador</button>` : ''}
-        ${j.id !== estado.usuarioActual ? `<button class="boton peligro pequeno" data-accion="quitar-jug" data-jug="${j.id}">Quitar</button>` : ''}</li>`).join('')}</ul>
-      <p class="texto-mini mt8">Los jugadores se registran solos con su correo y contraseña. Aquí puedes hacerlos organizador o quitarlos.</p></div>
-    ${!Datos.online ? `<div class="tarjeta"><div class="tarjeta-titulo">⚠️ Zona de peligro</div><p class="texto-mini">Borra todos los datos de este equipo y vuelve a los de ejemplo.</p><div class="mt8"><button class="boton peligro" data-accion="reiniciar">Reiniciar todo</button></div></div>` : ''}`;
+    </div>`;
 }
 
 /* ---- CALENDARIO (agenda para los hinchas) ---- */
@@ -464,7 +776,7 @@ function actualizarCountdown() {
    ---------------------------------------------------------------- */
 const TABS = [
   { id: 'inicio', ico: '🏠', txt: 'Inicio' }, { id: 'calendario', ico: '📅', txt: 'Calendario', m: 'Agenda' },
-  { id: 'partidos', ico: '⚽', txt: 'Partidos' }, { id: 'posiciones', ico: '🏅', txt: 'Posiciones', m: 'Tabla' },
+  { id: 'partidos', ico: '⚽', txt: 'Partidos' }, { id: 'resumen', ico: '📦', txt: 'Resumen', m: 'Backup' }, { id: 'en-vivo', ico: '📺', txt: 'En vivo', m: 'ESPN' }, { id: 'posiciones', ico: '🏅', txt: 'Posiciones', m: 'Tabla' },
   { id: 'bote', ico: '💰', txt: 'Premio' }, { id: 'admin', ico: '🛠️', txt: 'Organizador', m: 'Admin' },
 ];
 
@@ -483,10 +795,16 @@ function render() {
   document.getElementById('contenido').innerHTML = (VISTAS[estado.vista] || vistaInicio)();
 
   if (cdInterval) { clearInterval(cdInterval); cdInterval = null; }
+  if (liveInterval) { clearInterval(liveInterval); liveInterval = null; }
   if (estado.vista === 'calendario' && document.getElementById('cd-timer')) {
     actualizarCountdown();
     cdInterval = setInterval(actualizarCountdown, 1000);
   }
+  if (estado.vista === 'en-vivo') {
+    if (!estado.espn.lastFetch && !estado.espn.loading) cargarESPNEnVivo();
+    if (!liveInterval) liveInterval = setInterval(() => { if (estado.vista === 'en-vivo') cargarESPNEnVivo(); }, 30000);
+  }
+  if (!espnBgInterval) espnBgInterval = setInterval(() => { if (estado.usuarioActual) cargarESPNEnVivo(); }, 300000);
   window.scrollTo({ top: 0 });
 }
 
@@ -506,6 +824,15 @@ document.addEventListener('click', (e) => {
     case 'fase': faseSel = el.dataset.f; grupoSel = null; render(); break;
     case 'fase-tabla': faseTabla = el.dataset.f; render(); break;
     case 'salir': Auth.salir(); break;
+    case 'respaldo-descargar': descargarRespaldoPredicciones(); break;
+    case 'respaldo-copiar': copiarRespaldoPredicciones().catch(err => console.warn(err)); break;
+    case 'toggle-cierre-pronosticos': {
+      if (!esOrganizador()) return;
+      estado.config.pronosticosCerrados = !estado.config.pronosticosCerrados;
+      sync(Datos.guardarConfig());
+      render();
+      break;
+    }
 
     case 'pred': {  // el jugador toca L / E / V (solo fija; no quita)
       const p = estado.partidos.find(x => x.id === el.dataset.partido);
@@ -540,6 +867,7 @@ document.addEventListener('click', (e) => {
     }
     case 'hacer-org': {
       if (!esOrganizador()) return;
+      if (edicionCerrada()) return;
       const j = getJugador(el.dataset.jug); if (j) { j.esOrganizador = true; sync(Datos.guardarJugador(j.id)); }
       render(); break;
     }
@@ -561,7 +889,10 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'quitar-jug':
+      if (edicionCerrada()) return;
       if (confirm('¿Quitar a este jugador y sus pronósticos?')) { sync(Datos.eliminarJugador(el.dataset.jug)); render(); }
+      break;
+    case 'vaciar-jugadores':
       break;
     case 'reiniciar':
       if (!Datos.online && confirm('Esto borra TODO en este equipo. ¿Seguro?')) { Datos.reiniciarLocal(); estado.vista = 'inicio'; render(); }
@@ -646,6 +977,10 @@ function alHaberCambios() {
 async function iniciar() {
   pintarBanderas();
   await Datos.cargar(estado, alHaberCambios);
+  if (formatearMontoBase()) sync(Datos.guardarConfig());
   Auth.iniciar(estado, () => { estado.vista = 'inicio'; render(); });
 }
+window.__APP_STATE__ = estado;
+window.Datos = Datos;
+window.Auth = Auth;
 iniciar();

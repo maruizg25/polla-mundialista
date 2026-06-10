@@ -17,6 +17,7 @@ create table if not exists config (
   monto_partido int default 2,
   puntos        jsonb,
   fases         jsonb,
+  pronosticos_cerrados boolean default false,
   campeon_real  text,
   subcampeon_real text
 );
