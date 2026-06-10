@@ -20,6 +20,7 @@ const Datos = (function () {
 
   /* ---------- Utilidades ---------- */
   function uid(pre) { return (pre || 'u') + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36); }
+  function emailL(e) { return (e || '').toLowerCase().trim(); }
 
   // Datos "semilla" para el modo local (con predicciones y apuestas de ejemplo).
   function generarSemilla() {
@@ -177,6 +178,17 @@ const Datos = (function () {
 
     // Crea un jugador. El primero en registrarse queda como organizador.
     async crearJugador(jugador) {
+      const emailExistente = emailL(jugador.email);
+      if (emailExistente) {
+        const yaExiste = est.jugadores.find(j => emailL(j.email) === emailExistente);
+        if (yaExiste) {
+          if (jugador.nombre && yaExiste.nombre !== jugador.nombre) yaExiste.nombre = jugador.nombre;
+          if (jugador.color && yaExiste.color !== jugador.color) yaExiste.color = jugador.color;
+          if (!MODO_ONLINE) guardarLocal();
+          else await sb.from('jugadores').update(aFilaJugador(yaExiste)).eq('id', yaExiste.id);
+          return yaExiste;
+        }
+      }
       const esPrimero = est.jugadores.length === 0;
       const emailOrg = ((est.config && est.config.organizadorEmail) || '').toLowerCase();
       const esOrgEmail = !!emailOrg && (jugador.email || '').toLowerCase() === emailOrg;
@@ -319,6 +331,32 @@ const Datos = (function () {
         await sb.from('jugadores').delete().in('id', ids);
       }
       return ids.length;
+    },
+
+    async deduplicarJugadores() {
+      const vistos = new Map();
+      const mantener = [];
+      const eliminar = [];
+      const rows = [...(est.jugadores || [])].sort((a, b) => {
+        const ta = new Date(a.creado || 0).getTime();
+        const tb = new Date(b.creado || 0).getTime();
+        return ta - tb;
+      });
+      rows.forEach(j => {
+        const key = emailL(j.email) || `id:${j.id}`;
+        if (!vistos.has(key)) { vistos.set(key, j); mantener.push(j); return; }
+        eliminar.push(j);
+      });
+      if (!eliminar.length) return 0;
+      const idsEliminar = eliminar.map(j => j.id);
+      est.jugadores = mantener;
+      idsEliminar.forEach(id => { delete est.predicciones[id]; delete est.apuestas[id]; });
+      if (!MODO_ONLINE) { guardarLocal(); return idsEliminar.length; }
+      await sb.from('predicciones').delete().in('jugador_id', idsEliminar);
+      await sb.from('picks_final').delete().in('jugador_id', idsEliminar);
+      await sb.from('apuestas').delete().in('jugador_id', idsEliminar);
+      await sb.from('jugadores').delete().in('id', idsEliminar);
+      return idsEliminar.length;
     },
   };
 })();

@@ -19,6 +19,7 @@ const Auth = (function () {
   let correoPendienteConfirmacion = '';
 
   const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const emailL = e => String(e || '').toLowerCase().trim();
   const COLORES = ['#0540A6', '#E4002B', '#E6A700', '#0A8754', '#7c3aed', '#0891b2', '#be123c', '#c2410c'];
 
   function entrarApp(jugadorId) {
@@ -50,18 +51,18 @@ const Auth = (function () {
 
   async function manejarSesion(session) {
     if (session && session.user) {
-      const emailL = (session.user.email || '').toLowerCase();
-      if ((est.bloqueados || []).includes(emailL)) {   // el organizador lo quitó
+      const email = emailL(session.user.email);
+      if ((est.bloqueados || []).includes(email)) {   // el organizador lo quitó
         est.usuarioActual = null; modo = 'login'; aviso = '';
         error = 'El organizador te quitó de la polla. Si crees que es un error, contáctalo.';
         mostrarLogin(); return;
       }
-      let j = Datos.jugadorPorEmail(session.user.email);
+      let j = Datos.jugadorPorEmail(email);
       if (!j && !creando) {
         creando = true;
         const meta = session.user.user_metadata || {};
         const nombre = [meta.nombre, meta.apellidos].filter(Boolean).join(' ').trim() || meta.nombre_completo || (session.user.email || 'Jugador').split('@')[0];
-        try { j = await Datos.crearJugador({ nombre, email: session.user.email, color: COLORES[est.jugadores.length % COLORES.length] }); }
+        try { j = await Datos.crearJugador({ nombre, email, color: COLORES[est.jugadores.length % COLORES.length] }); }
         catch (e) { console.warn(e); }
         creando = false;
       }
@@ -152,7 +153,7 @@ const Auth = (function () {
       const { data, error: err } = await Datos.authRegistrar(email, pass, nombre, apellidos);
       if (err) { error = traducir(err.message); pintar(); return; }
       if (data && data.session) {
-        try { const j = await Datos.crearJugador({ nombre, email, color: COLORES[est.jugadores.length % COLORES.length] }); entrarApp(j.id); }
+        try { const j = await Datos.crearJugador({ nombre, email: emailL(email), color: COLORES[est.jugadores.length % COLORES.length] }); entrarApp(j.id); }
         catch (e2) { error = 'Cuenta creada, pero no se pudo guardar el jugador. Inicia sesión.'; modo = 'login'; pintar(); }
       } else {
         modo = 'login'; error = ''; aviso = 'Te enviamos un correo para confirmar tu cuenta. Ábrelo y luego inicia sesión.'; correoPendienteConfirmacion = email; pintar();
